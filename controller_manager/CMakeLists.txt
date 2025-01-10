@@ -268,6 +268,11 @@ install(
   RUNTIME DESTINATION lib/controller_manager
 )
 
+install(
+  DIRECTORY launch
+  DESTINATION share/controller_manager
+)
+
 ament_python_install_package(controller_manager
   SCRIPTS_DESTINATION lib/controller_manager
 )
