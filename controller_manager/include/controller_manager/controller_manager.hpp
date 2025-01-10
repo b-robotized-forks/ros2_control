@@ -16,6 +16,7 @@
 #define CONTROLLER_MANAGER__CONTROLLER_MANAGER_HPP_
 
 #include <map>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -68,19 +69,22 @@ public:
     std::shared_ptr<rclcpp::Executor> executor,
     const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options());
+    const rclcpp::NodeOptions & options = get_cm_node_options(),
+    const std::string & runtime_config_prefix_path = "");
 
   ControllerManager(
     std::shared_ptr<rclcpp::Executor> executor,
     const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options());
+    const rclcpp::NodeOptions & options = get_cm_node_options(),
+    const std::string & runtime_config_prefix_path = "");
 
   ControllerManager(
     std::shared_ptr<rclcpp::Executor> executor, const std::string & urdf,
     bool activate_all_hw_components, const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options());
+    const rclcpp::NodeOptions & options = get_cm_node_options(),
+    const std::string & runtime_config_prefix_path = "");
 
   virtual ~ControllerManager();
 
@@ -535,7 +539,6 @@ private:
   std::shared_ptr<pluginlib::ClassLoader<controller_interface::ControllerInterface>> loader_;
   std::shared_ptr<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>
     chainable_loader_;
-
   /// Best effort (non real-time safe) callback group, e.g., service callbacks.
   /**
    * Best effort (non real-time safe) callback group for callbacks that can possibly break
@@ -662,6 +665,7 @@ private:
   std::map<std::string, std::vector<std::string>> controller_chained_state_interfaces_cache_;
 
   rclcpp::NodeOptions cm_node_options_;
+  const std::filesystem::path runtime_config_prefix_path_;
   std::string robot_description_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_description_subscription_;
   rclcpp::TimerBase::SharedPtr robot_description_notification_timer_;

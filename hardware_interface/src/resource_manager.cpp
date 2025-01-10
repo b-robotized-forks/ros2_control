@@ -1441,7 +1441,8 @@ bool ResourceManager::shutdown_components()
 
 // CM API: Called in "callback/slow"-thread
 bool ResourceManager::load_and_initialize_components(
-  const std::string & urdf, const unsigned int update_rate)
+  const std::string & urdf, const unsigned int update_rate,
+  const std::vector<std::string> & components_to_not_load)
 {
   components_are_loaded_and_initialized_ = true;
 
@@ -1463,6 +1464,16 @@ bool ResourceManager::load_and_initialize_components(
   std::lock_guard<std::recursive_mutex> limiters_guard(joint_limiters_lock_);
   for (const auto & individual_hardware_info : hardware_info)
   {
+    const auto find_if = std::find(
+      components_to_not_load.begin(), components_to_not_load.end(), individual_hardware_info.name);
+    if (find_if != components_to_not_load.end())
+    {
+      RCUTILS_LOG_INFO_NAMED(
+        "resource_manager", "Skipping loading for hardware with name %s.",
+        individual_hardware_info.name.c_str());
+      continue;
+    }
+
     // Check for identical names
     if (
       resource_storage_->hardware_info_map_.find(individual_hardware_info.name) !=
@@ -1512,7 +1523,8 @@ bool ResourceManager::load_and_initialize_components(
     }
   }
 
-  if (components_are_loaded_and_initialized_ && validate_storage(hardware_info))
+  if (
+    components_are_loaded_and_initialized_ && validate_storage(hardware_info, components_to_not_load))
   {
     std::lock_guard<std::recursive_mutex> guard(resources_lock_);
     read_write_status.failed_hardware_names.reserve(
@@ -1541,7 +1553,7 @@ bool ResourceManager::load_and_initialize_components(
   resource_storage_->node_namespace_ = params.node_namespace;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  return load_and_initialize_components(params.robot_description, params.update_rate);
+  return load_and_initialize_components(params.robot_description, params.update_rate, params.components_to_not_load);
 #pragma GCC diagnostic pop
 }
 
@@ -2623,13 +2635,21 @@ hardware_interface::ResourceManagerParams ResourceManager::constructParams(
 }
 
 bool ResourceManager::validate_storage(
-  const std::vector<hardware_interface::HardwareInfo> & hardware_info) const
+  const std::vector<hardware_interface::HardwareInfo> & hardware_info,
+  const std::vector<std::string> & components_to_not_load) const
 {
   std::vector<std::string> missing_state_keys = {};
   std::vector<std::string> missing_command_keys = {};
 
   for (const auto & hardware : hardware_info)
   {
+    const auto find_if =
+      std::find(components_to_not_load.begin(), components_to_not_load.end(), hardware.name);
+    if (find_if != components_to_not_load.end())
+    {
+      continue;
+    }
+
     for (const auto & joint : hardware.joints)
     {
       for (const auto & state_interface : joint.state_interfaces)

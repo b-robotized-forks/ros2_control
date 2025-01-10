@@ -96,6 +96,13 @@ struct ResourceManagerParams
    * or for other timing considerations.
    */
   unsigned int update_rate = 100;
+
+  /**
+   * @brief List of component names that should not be loaded.
+   * Components in this list will be skipped during the loading and initialization process of RM.
+   */
+  std::vector<std::string> components_to_not_load = {};
+
 };
 
 }  // namespace hardware_interface

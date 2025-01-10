@@ -16,6 +16,8 @@
 
 #include <fmt/compile.h>
 
+#include <filesystem>
+#include <iostream>
 #include <memory>
 #include <set>
 #include <string>
@@ -438,15 +440,17 @@ rclcpp::NodeOptions get_cm_node_options()
 
 ControllerManager::ControllerManager(
   std::shared_ptr<rclcpp::Executor> executor, const std::string & manager_node_name,
-  const std::string & node_namespace, const rclcpp::NodeOptions & options)
-: ControllerManager(executor, "", false, manager_node_name, node_namespace, options)
+  const std::string & node_namespace, const rclcpp::NodeOptions & options,
+  const std::string & runtime_config_prefix_path)
+: ControllerManager(executor, "", false, manager_node_name, node_namespace, options, runtime_config_prefix_path)
 {
 }
 
 ControllerManager::ControllerManager(
   std::shared_ptr<rclcpp::Executor> executor, const std::string & urdf,
   bool activate_all_hw_components, const std::string & manager_node_name,
-  const std::string & node_namespace, const rclcpp::NodeOptions & options)
+  const std::string & node_namespace, const rclcpp::NodeOptions & options,
+  const std::string & runtime_config_prefix_path)
 : rclcpp::Node(manager_node_name, node_namespace, options),
   diagnostics_updater_(this),
   executor_(executor),
@@ -457,7 +461,31 @@ ControllerManager::ControllerManager(
     std::make_shared<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>(
       kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
   cm_node_options_(options),
-  robot_description_(urdf)
+  runtime_config_prefix_path_(runtime_config_prefix_path)
+{
+  initialize_parameters();
+  resource_manager_ =
+    std::make_unique<hardware_interface::ResourceManager>(trigger_clock_, this->get_logger());
+  init_controller_manager();
+}
+
+ControllerManager::ControllerManager(
+  std::shared_ptr<rclcpp::Executor> executor, const std::string & urdf,
+  bool activate_all_hw_components, const std::string & manager_node_name,
+  const std::string & node_namespace, const rclcpp::NodeOptions & options,
+  const std::string & runtime_config_prefix_path)
+: rclcpp::Node(manager_node_name, node_namespace, options),
+  diagnostics_updater_(this),
+  executor_(executor),
+  loader_(
+    std::make_shared<pluginlib::ClassLoader<controller_interface::ControllerInterface>>(
+      kControllerInterfaceNamespace, kControllerInterfaceClassName)),
+  chainable_loader_(
+    std::make_shared<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>(
+      kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
+  cm_node_options_(options),
+  robot_description_(urdf),
+  runtime_config_prefix_path_(runtime_config_prefix_path)
 {
   initialize_parameters();
   hardware_interface::ResourceManagerParams params;
@@ -480,7 +508,8 @@ ControllerManager::ControllerManager(
 ControllerManager::ControllerManager(
   std::unique_ptr<hardware_interface::ResourceManager> resource_manager,
   std::shared_ptr<rclcpp::Executor> executor, const std::string & manager_node_name,
-  const std::string & node_namespace, const rclcpp::NodeOptions & options)
+  const std::string & node_namespace, const rclcpp::NodeOptions & options,
+  const std::string & runtime_config_prefix_path)
 : rclcpp::Node(manager_node_name, node_namespace, options),
   resource_manager_(std::move(resource_manager)),
   diagnostics_updater_(this),
@@ -492,7 +521,8 @@ ControllerManager::ControllerManager(
     std::make_shared<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>(
       kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
   cm_node_options_(options),
-  robot_description_(resource_manager_->get_robot_description())
+  robot_description_(resource_manager_->get_robot_description()),
+  runtime_config_prefix_path_(runtime_config_prefix_path)
 {
   initialize_parameters();
   init_controller_manager();
@@ -699,6 +729,7 @@ void ControllerManager::init_resource_manager(const std::string & robot_descript
   params.executor = executor_;
   params.node_namespace = this->get_namespace();
   params.update_rate = static_cast<unsigned int>(params_->update_rate);
+  params.components_to_not_load = params_->hardware_components_initial_state.not_loaded;
   if (!resource_manager_->load_and_initialize_components(params))
   {
     RCLCPP_WARN(
@@ -755,11 +786,6 @@ void ControllerManager::init_resource_manager(const std::string & robot_descript
       }
     }
   };
-
-  if (cm_param_listener_->is_old(*params_))
-  {
-    *params_ = cm_param_listener_->get_params();
-  }
 
   // unconfigured (loaded only)
   set_components_to_state(
@@ -1022,13 +1048,36 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::load_c
   rclcpp::Parameter params_files_parameter;
   if (get_parameter(param_name, params_files_parameter))
   {
+    RCLCPP_INFO(get_logger(), "For controller '%s' parameter file is set.", controller_name.c_str());
+
     if (params_files_parameter.get_type() == rclcpp::ParameterType::PARAMETER_STRING_ARRAY)
     {
+      RCLCPP_INFO(
+        get_logger(), "For controller '%s' parameter file is set as string array",
+        controller_name.c_str());
       controller_spec.info.parameters_files = params_files_parameter.as_string_array();
+
+      std::transform(
+        controller_spec.info.parameters_files.begin(), controller_spec.info.parameters_files.end(),
+        controller_spec.info.parameters_files.begin(),
+        [this](const std::string & param_file_path)
+        {
+          std::filesystem::path rel_parameters_file_path(param_file_path);
+          std::filesystem::path full_param_file_path =
+            this->runtime_config_prefix_path_ / rel_parameters_file_path.relative_path();
+          return full_param_file_path.lexically_normal().string();
+        });
     }
     else if (params_files_parameter.get_type() == rclcpp::ParameterType::PARAMETER_STRING)
     {
-      controller_spec.info.parameters_files.push_back(params_files_parameter.as_string());
+      RCLCPP_INFO(
+        get_logger(), "For controller '%s' parameter file is set as string.",
+        controller_name.c_str());
+      const std::filesystem::path rel_parameters_file_path(params_files_parameter.as_string());
+      auto full_param_file_path =
+        runtime_config_prefix_path_ / rel_parameters_file_path.relative_path();
+      controller_spec.info.parameters_files.push_back(
+        full_param_file_path.lexically_normal().string());
     }
     else
     {
@@ -1042,6 +1091,13 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::load_c
 
   const std::string fallback_ctrl_param =
     fmt::format(FMT_COMPILE("{}.fallback_controllers"), controller_name);
+
+  RCLCPP_INFO(get_logger(), "For controller '%s' have parameter files:.", controller_name.c_str());
+  for (const auto & param_file : controller_spec.info.parameters_files)
+  {
+    RCLCPP_INFO(get_logger(), "%s", param_file.c_str());
+  }
+
   std::vector<std::string> fallback_controllers;
   if (!has_parameter(fallback_ctrl_param))
   {
