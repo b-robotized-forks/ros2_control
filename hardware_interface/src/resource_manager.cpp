@@ -1514,7 +1514,8 @@ bool ResourceManager::shutdown_components()
 
 // CM API: Called in "callback/slow"-thread
 bool ResourceManager::load_and_initialize_components(
-  const std::string & urdf, const unsigned int update_rate)
+  const std::string & urdf, const unsigned int update_rate,
+  const std::vector<std::string> & components_to_not_load)
 {
   components_are_loaded_and_initialized_ = false;
 
@@ -1539,6 +1540,16 @@ bool ResourceManager::load_and_initialize_components(
   std::lock_guard<std::recursive_mutex> limiters_guard(joint_limiters_lock_);
   for (const auto & individual_hardware_info : hardware_info)
   {
+    const auto find_if = std::find(
+      components_to_not_load.begin(), components_to_not_load.end(), individual_hardware_info.name);
+    if (find_if != components_to_not_load.end())
+    {
+      RCUTILS_LOG_INFO_NAMED(
+        "resource_manager", "Skipping loading for hardware with name %s.",
+        individual_hardware_info.name.c_str());
+      continue;
+    }
+
     // Check for identical names
     if (
       resource_storage_->hardware_info_map_.find(individual_hardware_info.name) !=
@@ -1588,7 +1599,9 @@ bool ResourceManager::load_and_initialize_components(
     }
   }
 
-  if (components_are_loaded_and_initialized_ && validate_storage(hardware_info))
+  if (
+    components_are_loaded_and_initialized_ &&
+    validate_storage(hardware_info, components_to_not_load))
   {
     std::lock_guard<std::recursive_mutex> guard(resources_lock_);
     read_write_status.failed_hardware_names.reserve(
@@ -1618,7 +1631,8 @@ bool ResourceManager::load_and_initialize_components(
   params_.handle_exceptions = params.handle_exceptions;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  return load_and_initialize_components(params.robot_description, params.update_rate);
+  return load_and_initialize_components(
+    params.robot_description, params.update_rate, params.components_to_not_load);
 #pragma GCC diagnostic pop
 }
 
@@ -1671,6 +1685,43 @@ bool ResourceManager::state_interface_is_available(const std::string & name) con
 {
   std::lock_guard<std::recursive_mutex> guard(resource_interfaces_lock_);
   return ros2_control::has_item(resource_storage_->available_state_interfaces_, name);
+}
+
+std::shared_ptr<realtime_tools::SyncSignal> ResourceManager::get_hardware_sync_signal(
+  const std::string & hardware_name) const
+{
+  std::lock_guard<std::recursive_mutex> guard(resources_lock_);
+
+  auto find_signal = [&](auto & container) -> std::shared_ptr<realtime_tools::SyncSignal>
+  {
+    auto it = std::find_if(
+      container.begin(), container.end(),
+      [&](const auto & component) { return component.get_name() == hardware_name; });
+
+    if (it != container.end())
+    {
+      return it->get_sync_signal();
+    }
+    return nullptr;
+  };
+
+  if (auto signal = find_signal(resource_storage_->actuators_))
+  {
+    return signal;
+  }
+  if (auto signal = find_signal(resource_storage_->sensors_))
+  {
+    return signal;
+  }
+  if (auto signal = find_signal(resource_storage_->systems_))
+  {
+    return signal;
+  }
+
+  RCLCPP_ERROR(
+    get_logger(), "Hardware component '%s' not found when requesting sync signal.",
+    hardware_name.c_str());
+  return nullptr;
 }
 
 std::string ResourceManager::get_state_interface_data_type(const std::string & name) const
@@ -2696,13 +2747,21 @@ hardware_interface::ResourceManagerParams ResourceManager::constructParams(
 }
 
 bool ResourceManager::validate_storage(
-  const std::vector<hardware_interface::HardwareInfo> & hardware_info) const
+  const std::vector<hardware_interface::HardwareInfo> & hardware_info,
+  const std::vector<std::string> & components_to_not_load) const
 {
   std::vector<std::string> missing_state_keys = {};
   std::vector<std::string> missing_command_keys = {};
 
   for (const auto & hardware : hardware_info)
   {
+    const auto find_if =
+      std::find(components_to_not_load.begin(), components_to_not_load.end(), hardware.name);
+    if (find_if != components_to_not_load.end())
+    {
+      continue;
+    }
+
     for (const auto & joint : hardware.joints)
     {
       for (const auto & state_interface : joint.state_interfaces)

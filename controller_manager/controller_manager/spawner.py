@@ -84,6 +84,13 @@ def parse_args_advanced(args):
         help="Name of the controller manager",
     )
     global_parser.add_argument(
+        "--param-file-remote-only",
+        help="Set this to load the param file only remotely. Param file is not needed to be present locally only remotely.",
+        default=False,
+        action="store_true",
+        required=False,
+    )
+    global_parser.add_argument(
         "--controller-manager-timeout",
         type=float,
         default=0.0,
@@ -211,9 +218,35 @@ def parse_args_advanced(args):
     return global_namespace, controllers
 
 
+def parse_type_from_controllers(controller_names: list[str]) -> dict[str, str]:
+    controller_to_type = dict()
+    for name in controller_names:
+        # We expect controller:some/type
+        # -> split[0]=controller AND split[1]=some/type
+        split = name.split(":")
+        if len(split) != 2 or not split[0] or not split[1]:
+            raise ValueError(
+                f"Invalid format '{name}'. Expected format is 'controller_name:some/controller_type' if '--param-file-remote-only' flag is used."
+            )
+        controller = split[0]
+        controller_type = split[1]
+
+        if controller in controller_to_type:
+            raise ValueError(
+                f"Controller names must be unique. Got multiple occurrences of {controller}"
+            )
+        else:
+            controller_to_type[controller] = controller_type
+    return controller_to_type
+
+
 def parse_native_args(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument("controller_names", help="List of controllers", nargs="+")
+    parser.add_argument(
+        "controller_names",
+        help="List of controllers. In combination with '--param-file-remote-only' flag pass type of controller as 'controller:/controller/type'",
+        nargs="+",
+    )
     parser.add_argument(
         "-c",
         "--controller-manager",
@@ -229,6 +262,13 @@ def parse_native_args(args):
         "override the parameters of the same controller.",
         default=None,
         action="append",
+        required=False,
+    )
+    parser.add_argument(
+        "--param-file-remote-only",
+        help="Set this to load the param file only remotely. Param file is not needed to be present locally only remotely.",
+        default=False,
+        action="store_true",
         required=False,
     )
     parser.add_argument(
@@ -367,6 +407,8 @@ def main(args=None):
     controller_manager_timeout = global_args.controller_manager_timeout
     service_call_timeout = global_args.service_call_timeout
     switch_timeout = global_args.switch_timeout
+    param_file_remote = global_args.param_file_remote_only
+
     strictness = SwitchController.Request.STRICT
     switch_asap = global_args.switch_asap
     activate_as_group = global_args.activate_as_group
@@ -386,12 +428,26 @@ def main(args=None):
                 controller["param_files"], spawner_ros_params_files
             )
 
-    # Check param files existence
-    for c in controllers:
-        if c["param_files"]:
-            for param_file in c["param_files"]:
-                if not os.path.isfile(param_file):
-                    raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), param_file)
+    # If we have remote flag given we want to parse the controller_names from
+    # controller:controller/type to a dict[controller] = controller/type
+    controller_to_type = {}
+    if param_file_remote:
+        controller_to_type = parse_type_from_controllers([c["name"] for c in controllers])
+        if not controller_to_type:
+            raise ValueError(
+                "Invalid format for controller_name. Expected format is 'controller_name:some/controller_type' if '--param-file-remote-only' flag is used."
+            )
+        # Update the names in our controller list to drop the :type suffix
+        for c in controllers:
+            c["name"] = c["name"].split(":")[0]
+
+    # Check param files existence (skip if remote)
+    if not param_file_remote:
+        for c in controllers:
+            if c["param_files"]:
+                for param_file in c["param_files"]:
+                    if not os.path.isfile(param_file):
+                        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), param_file)
 
     # Use the first controller name for the logger/lock
     first_controller_name = controllers[0]["name"]
@@ -506,6 +562,8 @@ def main(args=None):
                         controller_manager_name,
                         controller_name,
                         controller["param_files"],
+                        param_file_remote,
+                        controller_to_type,
                         spawner_namespace,
                     ):
                         return 1

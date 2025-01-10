@@ -15,6 +15,7 @@
 #ifndef CONTROLLER_MANAGER__CONTROLLER_MANAGER_HPP_
 #define CONTROLLER_MANAGER__CONTROLLER_MANAGER_HPP_
 
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <string>
@@ -46,17 +47,82 @@
 
 #include "pluginlib/class_loader.hpp"
 
+#include "lifecycle_msgs/msg/state.hpp"
 #include "rclcpp/executor.hpp"
 #include "rclcpp/node.hpp"
+#include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 #include "std_msgs/msg/string.hpp"
 
 namespace controller_manager
 {
 class ParamListener;
 struct Params;
+class ControllerManager;
 using ControllersListIterator = std::vector<controller_manager::ControllerSpec>::const_iterator;
-
+using LifecycleCallbackReturn =
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 rclcpp::NodeOptions get_cm_node_options();
+
+// Class which defines and manages the ControllerManager state machine.
+class ControllerManagerStateMachine
+: public rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface
+{
+public:
+  explicit ControllerManagerStateMachine(ControllerManager * cm) : cm_(cm) {}
+
+  LifecycleCallbackReturn on_configure(const rclcpp_lifecycle::State & /*previous_state*/) override;
+  LifecycleCallbackReturn on_activate(const rclcpp_lifecycle::State & /*previous_state*/) override;
+  LifecycleCallbackReturn on_deactivate(
+    const rclcpp_lifecycle::State & /*previous_state*/) override;
+  LifecycleCallbackReturn on_shutdown(const rclcpp_lifecycle::State & /*previous_state*/) override;
+  LifecycleCallbackReturn on_cleanup(const rclcpp_lifecycle::State & /*previous_state*/) override
+  {
+    return LifecycleCallbackReturn::FAILURE;  // unused for now.
+  };
+  LifecycleCallbackReturn on_error(const rclcpp_lifecycle::State & /*previous_state*/) override
+  {
+    return LifecycleCallbackReturn::FAILURE;  // unused for now.
+  };
+
+  const uint8_t & get_state_id() const { return current_state_id_; }
+  const rclcpp_lifecycle::State get_state() const
+  {
+    switch (current_state_id_)
+    {
+      case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
+        return rclcpp_lifecycle::State{
+          current_state_id_, hardware_interface::lifecycle_state_names::UNCONFIGURED};
+        break;
+      case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
+        return rclcpp_lifecycle::State{
+          current_state_id_, hardware_interface::lifecycle_state_names::INACTIVE};
+        break;
+      case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
+        return rclcpp_lifecycle::State{
+          current_state_id_, hardware_interface::lifecycle_state_names::ACTIVE};
+        break;
+      case lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED:
+        return rclcpp_lifecycle::State{
+          current_state_id_, hardware_interface::lifecycle_state_names::FINALIZED};
+        break;
+      case lifecycle_msgs::msg::State::PRIMARY_STATE_UNKNOWN:
+        return rclcpp_lifecycle::State{
+          current_state_id_, hardware_interface::lifecycle_state_names::UNKNOWN};
+        break;
+    }
+    // should not be reached
+    return rclcpp_lifecycle::State{};
+  }
+  /// @brief Transitions to the assigned state, calling the corresponding callback in the process.
+  /// Usage: state_machine_->transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
+  void transition_to(uint8_t target_state_id);
+
+private:
+  // ensures state graph integrity
+  bool is_transition_valid(uint8_t target_state_id);
+  ControllerManager * cm_;
+  uint8_t current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
+};
 
 class ControllerManager : public rclcpp::Node
 {
@@ -69,21 +135,31 @@ public:
     std::shared_ptr<rclcpp::Executor> executor,
     const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options());
+    const rclcpp::NodeOptions & options = get_cm_node_options(),
+    const std::string & runtime_config_prefix_path = "");
 
   ControllerManager(
     std::shared_ptr<rclcpp::Executor> executor,
     const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options());
+    const rclcpp::NodeOptions & options = get_cm_node_options(),
+    const std::string & runtime_config_prefix_path = "");
 
   ControllerManager(
     std::shared_ptr<rclcpp::Executor> executor, const std::string & urdf,
     bool activate_all_hw_components, const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options());
+    const rclcpp::NodeOptions & options = get_cm_node_options(),
+    const std::string & runtime_config_prefix_path = "");
 
   virtual ~ControllerManager();
+
+  // -- PUBLIC API FOR LIFECYCLE MANAGEMENT --
+  void lifecycle_allow_inactive(bool allow);
+  void lifecycle_allow_active(bool allow);
+  /// \brief triggers transition to FINALIZED, cleaning up resources and shutting down.
+  void shutdown();
+  // -----
 
   /// Shutdown all controllers in the controller manager.
   /**
@@ -134,6 +210,17 @@ public:
   {
     return add_controller_impl(controller_spec);
   }
+
+  /// switch state for a hardware component.
+  /**
+   * \param[in] hardware_component_name.
+   * \param[in] target_state.
+   * \return state switch response
+   * @note Checks if the controller manager is in the correct state for the transition, while
+   * ResourceManager checks if the component itself is in the correct state for the transition
+   */
+  hardware_interface::return_type set_hardware_component_state(
+    const std::string & hardware_component_name, rclcpp_lifecycle::State & target_state);
 
   /// configure_controller Configure controller by name calling their "configure" method.
   /**
@@ -246,7 +333,28 @@ public:
   rclcpp::Clock::SharedPtr get_trigger_clock() const;
 
 protected:
+  friend class controller_manager::ControllerManagerStateMachine;  // allow access to private
+                                                                   // members of the state machine
+
+  /// \brief True if at least one controller which claims command interfaces is active.
+  bool any_commander_controller_active();
+
+  /// \brief here we wait on robot_description, get parameters, initialize services and instantiate
+  /// ResourceManager
+  LifecycleCallbackReturn configure();
   void init_services();
+
+  std::unique_ptr<ControllerManagerStateMachine> state_machine_;
+  bool allow_inactive_ = false;
+  bool allow_active_ = false;
+
+  /// \brief Validates if preconditions are fulfilled for a transition (is cm ready for the
+  /// transition), attempts transition
+  void lifecycle_transition_to(uint8_t target_state_id);
+  /// \brief This performs a full teardown, shutting down all components, resetting the robot
+  /// description and resetting the resource manager.
+  void teardown();
+  void cancel_executor();
 
   controller_interface::ControllerInterfaceBaseSharedPtr add_controller_impl(
     const ControllerSpec & controller);
@@ -344,7 +452,6 @@ private:
   std::vector<std::string> get_controller_names();
   std::pair<std::string, std::string> split_command_interface(
     const std::string & command_interface);
-
   /// Initialize controller manager publishers, diagnostics, introspection, and shutdown handling.
   void init_controller_manager();
 
@@ -564,7 +671,6 @@ private:
   std::shared_ptr<pluginlib::ClassLoader<controller_interface::ControllerInterface>> loader_;
   std::shared_ptr<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>
     chainable_loader_;
-
   /// Best effort (non real-time safe) callback group, e.g., service callbacks.
   /**
    * Best effort (non real-time safe) callback group for callbacks that can possibly break
@@ -661,6 +767,11 @@ private:
   RTControllerListWrapper rt_controllers_wrapper_;
   std::unordered_map<std::string, ControllerChainSpec> controller_chain_spec_;
   std::vector<std::string> ordered_controllers_names_;
+
+  // runtime config path publisher
+  const std::filesystem::path runtime_config_prefix_path_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr runtime_config_prefix_path_publisher_;
+
   /// mutex copied from ROS1 Control, protects service callbacks
   /// not needed if we're guaranteed that the callbacks don't come from multiple threads
   std::mutex services_lock_;
