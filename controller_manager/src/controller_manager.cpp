@@ -579,6 +579,19 @@ void ControllerManager::init_controller_manager()
   resource_manager_->set_on_component_state_switch_callback(
     std::bind(&ControllerManager::publish_activity, this));
 
+  // Publish runtime_config_prefix_path
+  const std::string TOPIC_NAME = "~/ctrlx/runtime_config_dir";
+  runtime_config_prefix_path_publisher_ = this->create_publisher<std_msgs::msg::String>(
+      TOPIC_NAME,
+      rclcpp::QoS(1).transient_local() // transient_local, publish once and latch the message to topic
+    );
+  auto msg = std::make_unique<std_msgs::msg::String>();
+  msg->data = runtime_config_prefix_path_.string();
+  runtime_config_prefix_path_publisher_->publish(std::move(msg));
+  RCLCPP_INFO(
+    get_logger(), "Published runtime_config_prefix_path on topic '%s'",
+    runtime_config_prefix_path_publisher_->get_topic_name());
+
   // Get parameters needed for RT "update" loop to work
   if (is_resource_manager_initialized())
   {
