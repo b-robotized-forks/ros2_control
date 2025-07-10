@@ -99,6 +99,22 @@ bool controller_name_compare(const controller_manager::ControllerSpec & a, const
   return a.info.name == name;
 }
 
+/// \brief  True if the controller requests any command interfaces
+// (not necessarily export or claim, just indends to at some point).
+// If we are activating controller which is not necessarily loaded or configured yet (it is to be done )
+bool controller_requests_command_interface(const controller_interface::ControllerInterfaceBase & controller) {
+  // if it was configured at some point
+  if (is_controller_inactive(controller) || is_controller_active(controller)) {
+    const auto & cmd_config = controller.command_interface_configuration();
+    // and if it requests ALL command interfaces or some of them by name.
+    if (cmd_config.type == controller_interface::interface_configuration_type::ALL ||
+      (cmd_config.type == controller_interface::interface_configuration_type::INDIVIDUAL && !cmd_config.names.empty())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Checks if an interface belongs to a controller based on its prefix.
 /**
  * A State/Command interface can be provided by a controller in which case is called
@@ -463,10 +479,9 @@ ControllerManager::ControllerManager(
   cm_node_options_(options),
   runtime_config_prefix_path_(runtime_config_prefix_path)
 {
+  state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
   initialize_parameters();
-  resource_manager_ =
-    std::make_unique<hardware_interface::ResourceManager>(trigger_clock_, this->get_logger());
-  init_controller_manager();
+  configure();
 }
 
 ControllerManager::ControllerManager(
@@ -487,12 +502,14 @@ ControllerManager::ControllerManager(
   robot_description_(urdf),
   runtime_config_prefix_path_(runtime_config_prefix_path)
 {
+  // activate_all_hw_components becomes deprecated, as we have the ControllerManagerStateMachine to manage activation states.
+  state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
   initialize_parameters();
   hardware_interface::ResourceManagerParams params;
   params.robot_description = robot_description_;
   params.clock = trigger_clock_;
   params.logger = this->get_logger();
-  params.activate_all = activate_all_hw_components;
+  params.activate_all = false;
   params.update_rate = static_cast<unsigned int>(params_->update_rate);
   params.executor = executor_;
   params.node_namespace = node_namespace;
@@ -502,7 +519,7 @@ ControllerManager::ControllerManager(
     params_->defaults.deactivate_controllers_on_hardware_self_deactivate;
   resource_manager_ =
     std::make_unique<hardware_interface::ResourceManager>(params, !robot_description_.empty());
-  init_controller_manager();
+  configure();
 }
 
 ControllerManager::ControllerManager(
@@ -524,8 +541,8 @@ ControllerManager::ControllerManager(
   robot_description_(resource_manager_->get_robot_description()),
   runtime_config_prefix_path_(runtime_config_prefix_path)
 {
-  initialize_parameters();
-  init_controller_manager();
+  state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
+  this->configure();
 }
 
 ControllerManager::~ControllerManager()
@@ -537,6 +554,8 @@ ControllerManager::~ControllerManager()
     context->remove_pre_shutdown_callback(*(preshutdown_cb_handle_.get()));
     preshutdown_cb_handle_.reset();
   }
+
+  this->shutdown();
 }
 
 bool ControllerManager::shutdown_controllers()
@@ -569,7 +588,7 @@ bool ControllerManager::shutdown_controllers()
   return ctrls_shutdown_status;
 }
 
-void ControllerManager::init_controller_manager()
+LifecycleCallbackReturn ControllerManager::configure()
 {
   controller_manager_activity_publisher_ =
     create_publisher<controller_manager_msgs::msg::ControllerManagerActivity>(
@@ -600,11 +619,12 @@ void ControllerManager::init_controller_manager()
       resource_manager_->import_joint_limiters(robot_description_);
     }
     init_services();
+    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
   }
   else
   {
     robot_description_notification_timer_ = create_wall_timer(
-      std::chrono::seconds(1),
+      std::chrono::seconds(5),
       [&]()
       {
         RCLCPP_WARN(
@@ -645,27 +665,15 @@ void ControllerManager::init_controller_manager()
   rclcpp::Context::SharedPtr context = this->get_node_base_interface()->get_context();
   preshutdown_cb_handle_ =
     std::make_unique<rclcpp::PreShutdownCallbackHandle>(context->add_pre_shutdown_callback(
-      [this]()
-      {
-        RCLCPP_INFO(get_logger(), "Shutdown request received....");
-        if (this->get_node_base_interface()->get_associated_with_executor_atomic().load())
-        {
-          executor_->remove_node(this->get_node_base_interface());
-        }
-        executor_->cancel();
-        if (!this->shutdown_controllers())
-        {
-          RCLCPP_ERROR(get_logger(), "Failed shutting down the controllers.");
-        }
-        if (!resource_manager_->shutdown_components())
-        {
-          RCLCPP_ERROR(get_logger(), "Failed shutting down hardware components.");
-        }
-        RCLCPP_INFO(get_logger(), "Shutting down the controller manager.");
+      [this](){
+        this->lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
       }));
 
   RCLCPP_INFO_EXPRESSION(
     get_logger(), params_->enforce_command_limits, "Enforcing command limits is enabled...");
+
+  // but we also don't want to block ,as we have a callback
+  return LifecycleCallbackReturn::SUCCESS;
 }
 
 void ControllerManager::initialize_parameters()
@@ -719,14 +727,18 @@ void ControllerManager::robot_description_callback(const std_msgs::msg::String &
     return;
   }
   init_resource_manager(robot_description_);
-  if (is_resource_manager_initialized())
+
+  if (!is_resource_manager_initialized())
   {
-    RCLCPP_INFO(
+    // The RM failed to init AFTER we received the description - a critical error.
+    RCLCPP_ERROR(
       get_logger(),
-      "Resource Manager has been successfully initialized. Starting Controller Manager "
-      "services...");
-    init_services();
+      "Resource Manager failed to configure after receiving robot description. Shutting down controller manager...");
+    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
+    return;
   }
+
+  lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
 }
 
 void ControllerManager::init_resource_manager(const std::string & robot_description)
@@ -752,73 +764,17 @@ void ControllerManager::init_resource_manager(const std::string & robot_descript
     return;
   }
 
-  // Get all components and if they are not defined in parameters activate them automatically
+  // Set all components to unconfigured, and configure/activate manually.
   auto components_to_activate = resource_manager_->get_components_status();
 
   using lifecycle_msgs::msg::State;
 
-  auto set_components_to_state =
-    [&](const std::vector<std::string> & components_to_set, rclcpp_lifecycle::State state)
-  {
-    for (const auto & component : components_to_set)
-    {
-      if (component.empty())
-      {
-        continue;
-      }
-      if (components_to_activate.find(component) == components_to_activate.end())
-      {
-        RCLCPP_WARN(
-          get_logger(), "Hardware component '%s' is unknown, therefore not set in '%s' state.",
-          component.c_str(), state.label().c_str());
-      }
-      else
-      {
-        RCLCPP_INFO(
-          get_logger(), "Setting component '%s' to '%s' state.", component.c_str(),
-          state.label().c_str());
-        if (
-          resource_manager_->set_component_state(component, state) ==
-          hardware_interface::return_type::ERROR)
-        {
-          if (params_->hardware_components_initial_state.shutdown_on_initial_state_failure)
-          {
-            throw std::runtime_error(
-              fmt::format(
-                FMT_COMPILE("Failed to set the initial state of the component : {} to {}"),
-                component.c_str(), state.label()));
-          }
-          else
-          {
-            RCLCPP_ERROR(
-              get_logger(), "Failed to set the initial state of the component : '%s' to '%s'",
-              component.c_str(), state.label().c_str());
-          }
-        }
-        components_to_activate.erase(component);
-      }
-    }
-  };
-
-  // unconfigured (loaded only)
-  set_components_to_state(
-    params_->hardware_components_initial_state.unconfigured,
-    rclcpp_lifecycle::State(
-      State::PRIMARY_STATE_UNCONFIGURED, hardware_interface::lifecycle_state_names::UNCONFIGURED));
-
-  // inactive (configured)
-  set_components_to_state(
-    params_->hardware_components_initial_state.inactive,
-    rclcpp_lifecycle::State(
-      State::PRIMARY_STATE_INACTIVE, hardware_interface::lifecycle_state_names::INACTIVE));
-
-  // activate all other components
   for (const auto & [component, state] : components_to_activate)
   {
-    rclcpp_lifecycle::State active_state(
-      State::PRIMARY_STATE_ACTIVE, hardware_interface::lifecycle_state_names::ACTIVE);
+    rclcpp_lifecycle::State unconfigured_state(
+      State::PRIMARY_STATE_UNCONFIGURED, hardware_interface::lifecycle_state_names::UNCONFIGURED);
     if (
-      resource_manager_->set_component_state(component, active_state) ==
+      resource_manager_->set_component_state(component, unconfigured_state) ==
       hardware_interface::return_type::ERROR)
     {
       if (params_->hardware_components_initial_state.shutdown_on_initial_state_failure)
@@ -826,13 +782,13 @@ void ControllerManager::init_resource_manager(const std::string & robot_descript
         throw std::runtime_error(
           fmt::format(
             FMT_COMPILE("Failed to set the initial state of the component : {} to {}"),
-            component.c_str(), active_state.label()));
+            component.c_str(), unconfigured_state.label()));
       }
       else
       {
         RCLCPP_ERROR(
           get_logger(), "Failed to set the initial state of the component : '%s' to '%s'",
-          component.c_str(), active_state.label().c_str());
+          component.c_str(), unconfigured_state.label().c_str());
       }
     }
   }
@@ -896,6 +852,7 @@ void ControllerManager::init_resource_manager(const std::string & robot_descript
 
 void ControllerManager::init_services()
 {
+  RCLCPP_INFO(get_logger(), "Initializing services...");
   // TODO(anyone): Due to issues with the MutliThreadedExecutor, this control loop does not rely on
   // the executor (see issue #260).
   // deterministic_callback_group_ = create_callback_group(
@@ -1293,6 +1250,14 @@ std::vector<ControllerSpec> ControllerManager::get_loaded_controllers() const
 {
   std::lock_guard<std::recursive_mutex> guard(rt_controllers_wrapper_.controllers_lock_);
   return rt_controllers_wrapper_.get_updated_list(guard);
+}
+
+hardware_interface::return_type ControllerManager::set_hardware_component_state(const std::string & hardware_component_name, rclcpp_lifecycle::State & target_state)
+{
+  RCLCPP_DEBUG(get_logger(), "set hardware component state '%s'", hardware_component_name.c_str());
+
+  // TODO: space to check state switch w.r.t. controller_manager lifecycle state
+  return resource_manager_->set_component_state(hardware_component_name, target_state);
 }
 
 controller_interface::return_type ControllerManager::configure_controller(
@@ -1699,6 +1664,26 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
       }
       else
       {
+        if (action == "activate"){
+          if (controller_requests_command_interface(*(found_it->c)) ){
+            if ( !allow_active_ ){
+              const std::string error_msg = fmt::format(
+                FMT_COMPILE(
+                  "LifecycleError: Could not {} controller with name '{}'. ControllerManager not yet allowed to activate controllers that claim command interfaces."),
+                action, controller);
+              msg += error_msg + "\n";
+              RCLCPP_WARN(get_logger(), "%s", error_msg.c_str());
+
+              // for STRICT, return ERROR
+              if (strictness == controller_manager_msgs::srv::SwitchController::Request::STRICT){
+                return controller_interface::return_type::ERROR;
+              }
+              // For BEST_EFFORT, just skip this controller.
+              continue;
+            }
+          }
+        }
+
         result = controller_interface::return_type::OK;
         RCLCPP_DEBUG(
           get_logger(), "Found controller '%s' that needs to be %sed in list of controllers",
@@ -2144,6 +2129,12 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
   rt_controllers_wrapper_.switch_updated_list(guard);
   // clear unused list
   rt_controllers_wrapper_.get_unused_list(guard).clear();
+
+  if( any_commander_controller_active() ){
+    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+  }else{
+    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+  }
 
   clear_requests();
 
@@ -2941,26 +2932,17 @@ void ControllerManager::set_hardware_component_state_srv_cb(
   std::lock_guard<std::mutex> guard(services_lock_);
   RCLCPP_DEBUG(get_logger(), "set hardware component state service locked");
 
-  RCLCPP_DEBUG(get_logger(), "set hardware component state '%s'", request->name.c_str());
-
-  auto hw_components_info = resource_manager_->get_components_status();
-  if (hw_components_info.find(request->name) != hw_components_info.end())
-  {
-    rclcpp_lifecycle::State target_state(
+  rclcpp_lifecycle::State target_state(
       request->target_state.id,
       // the ternary operator is needed because label in State constructor cannot be an empty string
       request->target_state.label.empty() ? "-" : request->target_state.label);
-    response->ok =
-      (resource_manager_->set_component_state(request->name, target_state) ==
-       hardware_interface::return_type::OK);
-    hw_components_info = resource_manager_->get_components_status();
+
+  if (set_hardware_component_state(request->name, target_state) == hardware_interface::return_type::OK){
+    response->ok = true;
+    auto hw_components_info = resource_manager_->get_components_status();
     response->state.id = hw_components_info[request->name].state.id();
     response->state.label = hw_components_info[request->name].state.label();
-  }
-  else
-  {
-    RCLCPP_ERROR(
-      get_logger(), "hardware component with name '%s' does not exist", request->name.c_str());
+  }else{
     response->ok = false;
   }
 
@@ -2982,6 +2964,12 @@ std::vector<std::string> ControllerManager::get_controller_names()
 
 void ControllerManager::read(const rclcpp::Time & time, const rclcpp::Duration & period)
 {
+  if (
+    state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE &&
+    state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE){
+    return;
+  }
+
   periodicity_stats_.add_measurement(1.0 / period.seconds());
   const auto start_time = std::chrono::steady_clock::now();
   auto [result, failed_hardware_names] = resource_manager_->read(time, period);
@@ -3078,6 +3066,12 @@ void ControllerManager::manage_switch()
 controller_interface::return_type ControllerManager::update(
   const rclcpp::Time & time, const rclcpp::Duration & period)
 {
+  if (
+    state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE &&
+    state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE){
+    return controller_interface::return_type::OK;
+  }
+
   const auto start_time = std::chrono::steady_clock::now();
   execution_time_.switch_time = 0.0;
   execution_time_.switch_chained_mode_time = 0.0;
@@ -3298,6 +3292,12 @@ controller_interface::return_type ControllerManager::update(
 
 void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration & period)
 {
+  if (
+    state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE &&
+    state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE){
+    return;
+  }
+
   const auto start_time = std::chrono::steady_clock::now();
   auto [result, failed_hardware_names] = resource_manager_->write(time, period);
 
@@ -4101,15 +4101,6 @@ void ControllerManager::controller_activity_diagnostic_callback(
   diagnostic_updater::DiagnosticStatusWrapper & stat)
 {
   bool atleast_one_hw_active = false;
-  const auto & hw_components_info = resource_manager_->get_components_status();
-  for (const auto & [component_name, component_info] : hw_components_info)
-  {
-    if (component_info.state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
-    {
-      atleast_one_hw_active = true;
-      break;
-    }
-  }
   // lock controllers
   std::lock_guard<std::recursive_mutex> guard(rt_controllers_wrapper_.controllers_lock_);
   const std::vector<ControllerSpec> & controllers = rt_controllers_wrapper_.get_updated_list(guard);
@@ -4744,6 +4735,275 @@ void ControllerManager::cleanup_controller_exported_interfaces(const ControllerS
     resource_manager_->remove_controller_exported_state_interfaces(controller.info.name);
     resource_manager_->remove_controller_reference_interfaces(controller.info.name);
   }
+}
+
+std::string lifecycle_state_to_string(uint8_t state_id) {
+    switch (state_id) {
+        case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED: return "UNCONFIGURED";
+        case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:     return "INACTIVE";
+        case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:       return "ACTIVE";
+        case lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED:    return "FINALIZED";
+        default:                                                 return "UNKNOWN";
+    }
+}
+
+// -- PUBLIC LIFECYCLE API --
+void ControllerManager::lifecycle_allow_inactive(bool allow) {
+  allow_inactive_ = allow;
+  // finish initialization if we're coming from UNCONFIGURED.
+  // If we're coming from ACTIVE, don't transition, but still update allow_inactive_
+  if (allow_inactive_ && state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED) {
+    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+  }
+}
+void ControllerManager::lifecycle_allow_active(bool allow) {
+  allow_active_ = allow;
+
+  if (!allow_active_ && state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
+  {
+    std::vector<ControllerSpec> controllers_list = get_loaded_controllers();
+    std::vector<std::string> controllers_to_deactivate;
+
+    for (auto & controller : controllers_list){
+      if (is_controller_active(controller.c) && controller_requests_command_interface(*(controller.c))){
+        controllers_to_deactivate.push_back(controller.info.name);
+      }
+    }
+
+    RCLCPP_INFO(get_logger(), "deactivating ControllerManager");
+
+    if (!controllers_to_deactivate.empty()){
+    // as this is non-rt, use switch_controller()
+      if (
+        // we switch to inactive automatically if we deactivate all commander controllers
+        switch_controller(
+          {}, controllers_to_deactivate,
+          controller_manager_msgs::srv::SwitchController::Request::BEST_EFFORT, true, rclcpp::Duration::from_seconds(3.0)) != controller_interface::return_type::OK)
+      {
+        RCLCPP_ERROR(get_logger(), "Failed to deactivate controllers. Check logs for details.");
+        lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
+      }
+    }else{
+      // if no commander controllers, still go inactive.
+      lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    }
+  }
+}
+void ControllerManager::shutdown(){
+
+  if (state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED)
+  {
+    RCLCPP_INFO(get_logger(), "Shutdown requested. Transitioning to FINALIZED state.");
+    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
+  }
+}
+// -- end PUBLIC LIFECYCLE API --
+
+bool ControllerManagerStateMachine::is_transition_valid(uint8_t target_state_id)
+{
+  switch (current_state_id_)
+  {
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
+      return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
+      return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
+      return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    default:
+      return false; // no transitions from FINALIZED
+  }
+  return false;
+}
+
+void ControllerManagerStateMachine::transition_to(uint8_t target_state_id) {
+  RCLCPP_INFO(cm_->get_logger(), "Requesting transition: %s -> %s", lifecycle_state_to_string(current_state_id_).c_str(), lifecycle_state_to_string(target_state_id).c_str());
+
+  if (current_state_id_ == target_state_id){
+    RCLCPP_DEBUG(cm_->get_logger(), "Already in state '%s'.", lifecycle_state_to_string(current_state_id_).c_str());
+    return;
+  }
+
+  rclcpp_lifecycle::State current_state = get_state();
+
+  // shutdown can happen in any state
+  if (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED){
+    on_shutdown(current_state);
+    return;
+  }
+
+  // check transition validity
+  if (!is_transition_valid(target_state_id)){
+    RCLCPP_WARN(cm_->get_logger(), "Transition not valid. Ignoring.");
+    return;
+  }
+
+  LifecycleCallbackReturn result = LifecycleCallbackReturn::FAILURE;
+
+  switch (target_state_id)
+  {
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
+      if (current_state_id_ == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED){
+        result = on_configure(current_state);
+      }
+      else if (current_state_id_ == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE){
+        result = on_deactivate(current_state);
+      }
+      break;
+
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
+      result = on_activate(current_state);
+      break;
+
+    default:
+      // should never be reached, is_transition_valid() checks for validity
+      break;
+  }
+
+  if (result != LifecycleCallbackReturn::SUCCESS){
+    RCLCPP_WARN(cm_->get_logger(), "Transition callback failed. Staying in '%s' state.",
+      lifecycle_state_to_string(current_state_id_).c_str());
+    // for now, stay in the same state.
+  }
+
+}
+
+void ControllerManager::lifecycle_transition_to(uint8_t target_state_id) {
+
+  auto log_abort = [&](){
+    RCLCPP_WARN(get_logger(), "Transition aborted, staying in '%s' state.",
+        lifecycle_state_to_string( state_machine_->get_state_id() ).c_str());
+  };
+
+  switch (target_state_id)
+  {
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
+      if(state_machine_->get_state_id() >= lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE){
+        RCLCPP_WARN(get_logger(), "Cannot 'unconfigure' the controller manager. Feature not implemented.");
+        log_abort();
+        return;
+      }
+      break;
+
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
+      if(!is_resource_manager_initialized()){
+        RCLCPP_WARN(get_logger(), "ResourceManager not yet initialized.");
+        log_abort();
+        return;
+      }
+      if(!allow_inactive_){
+        RCLCPP_WARN(get_logger(), "Not allowed to transition to 'inactive'.");
+        log_abort();
+        return;
+      }
+      break;
+
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
+      if(!allow_active_){
+        RCLCPP_WARN(get_logger(), "Not allowed to transition to 'active'.");
+        log_abort();
+        return;
+      }
+      break;
+
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED:
+      // we can always finalize.
+      break;
+  }
+
+  // If we pass, request the transition from the state machine.
+  state_machine_->transition_to(target_state_id);
+}
+
+
+bool ControllerManager::any_commander_controller_active() {
+  const auto & controllers_list = get_loaded_controllers();
+
+  for (const auto& controller_spec : controllers_list){
+    if ( controller_requests_command_interface(*(controller_spec.c)) ){
+      if(controller_spec.c->get_lifecycle_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE){
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+LifecycleCallbackReturn ControllerManagerStateMachine::on_configure(const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  cm_->init_services();
+  RCLCPP_INFO(cm_->get_logger(), "Configuration successful.");
+  current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
+  return LifecycleCallbackReturn::SUCCESS;
+}
+
+LifecycleCallbackReturn ControllerManagerStateMachine::on_activate(const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  RCLCPP_INFO(cm_->get_logger(), "Activation successful.");
+  current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
+  return LifecycleCallbackReturn::SUCCESS;
+}
+
+LifecycleCallbackReturn ControllerManagerStateMachine::on_deactivate(const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  RCLCPP_INFO(cm_->get_logger(), "Deactivation successful.");
+  current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
+  return LifecycleCallbackReturn::SUCCESS;
+}
+
+void ControllerManager::teardown(){
+  RCLCPP_INFO(get_logger(), "Executing Controller Manager teardown...");
+
+  if (!this->shutdown_controllers()){
+    RCLCPP_ERROR(get_logger(), "Failed shutting down the controllers.");
+  }
+
+  if (resource_manager_ && !resource_manager_->shutdown_components()){
+    RCLCPP_ERROR(get_logger(), "Failed shutting down hardware components.");
+  }
+
+  RCLCPP_INFO(get_logger(), "Resetting Resource Manager...");
+  resource_manager_.reset();
+
+  RCLCPP_INFO(get_logger(), "Flushing robot_description...");
+  robot_description_.clear();
+
+  RCLCPP_INFO(get_logger(), "Controller Manager teardown complete.");
+}
+
+// LifecycleCallbackReturn ControllerManagerStateMachine::on_cleanup(const rclcpp_lifecycle::State & /*previous_state*/)
+// {
+//   if (/*previous_state*/.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED){
+//     // if unconfigured, nothing to clean up
+//     return LifecycleCallbackReturn::SUCCESS;
+//   }
+
+//   // For cleanup, also add resetting of all services, separate from executor_->cancel()
+
+//   RCLCPP_INFO(cm_->get_logger(), "Starting 'cleanup' transition from state '%s'.", /*previous_state*/.label().c_str());
+
+//   cm_->teardown();
+
+//   RCLCPP_INFO(cm_->get_logger(), "Lifecycle: cleanup complete. Transitioning to initial, 'unconfigured' state. Call configure() to restart.");
+
+//   current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
+//   return LifecycleCallbackReturn::SUCCESS;
+// }
+
+void ControllerManager::cancel_executor(){
+  if (this->get_node_base_interface()->get_associated_with_executor_atomic().load()){
+    executor_->remove_node(this->get_node_base_interface());
+  }
+  executor_->cancel();
+}
+LifecycleCallbackReturn ControllerManagerStateMachine::on_shutdown(const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  cm_->cancel_executor();
+  cm_->teardown();
+
+  RCLCPP_INFO(cm_->get_logger(), "Shutdown successful. ControllerManager is to be destroyed.");
+  current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED;
+
+  return LifecycleCallbackReturn::SUCCESS;
 }
 
 }  // namespace controller_manager
