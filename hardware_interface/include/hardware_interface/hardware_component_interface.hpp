@@ -25,6 +25,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "control_msgs/msg/hardware_status.hpp"
 #include "hardware_interface/component_parser.hpp"
 #include "hardware_interface/handle.hpp"
 #include "hardware_interface/hardware_info.hpp"
@@ -136,6 +137,30 @@ public:
    * \returns CallbackReturn::ERROR if any error happens or data are missing.
    */
   CallbackReturn init(const hardware_interface::HardwareComponentParams & params);
+
+  /// User-overridable method to configure the structure of the HardwareStatus message.
+  /**
+   * To enable status publishing, override this method to pre-allocate the message structure
+   * and fill in static information like device IDs. This method is called once during the
+   * non-realtime `init()` phase. If the `hardware_device_states` vector is left empty,
+   * publishing is disabled. Publishing also needs the `status_publish_rate` hardware parameter.
+   *
+   * \param[out] msg_template A reference to a HardwareStatus message to be configured.
+   * \returns CallbackReturn::SUCCESS if configured successfully, CallbackReturn::ERROR on failure.
+   */
+  virtual CallbackReturn init_hardware_status_message(
+    control_msgs::msg::HardwareStatus & msg_template);
+
+  /// User-overridable method to fill the hardware status message with the latest data.
+  /**
+   * This method is called from the status publisher timer of the hardware component node, at
+   * `status_publish_rate`, outside the realtime loop. Read only values that `read()` and
+   * `write()` share in a thread-safe way, e.g. atomics.
+   *
+   * \param[in,out] msg The pre-allocated message to be filled with the latest values.
+   * \returns return_type::OK on success, return_type::ERROR on failure.
+   */
+  virtual return_type update_hardware_status_message(control_msgs::msg::HardwareStatus & msg);
 
   /// Initialization of the hardware interface from data parsed from the robot's URDF.
   /**

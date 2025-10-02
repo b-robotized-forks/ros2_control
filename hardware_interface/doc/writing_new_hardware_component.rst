@@ -150,6 +150,20 @@ The following is a step-by-step guide to create source files, basic tests, and c
 
    #.  Implement ``write`` method that commands the hardware based on the values stored in internal variables defined in ``export_command_interfaces``.
 
+   #.  (optional) Publish the hardware status as ``control_msgs/msg/HardwareStatus``. Override two methods:
+
+       *   ``init_hardware_status_message``: called once in the non-realtime ``init()`` phase. Set ``hardware_id``, resize ``hardware_device_states`` and the per-device vectors (e.g. ``hardware_status``), and fill static fields such as ``device_id``. If ``hardware_device_states`` stays empty, publishing is disabled.
+       *   ``update_hardware_status_message``: called from the status timer of the hardware component node, outside the realtime loop. Fill the dynamic values from data that ``read()`` and ``write()`` share in a thread-safe way, e.g. atomics.
+
+       Enable the publisher with the ``status_publish_rate`` parameter (in Hz) in the ``<hardware>`` tag. The message is published on ``~/hardware_status`` of the hardware component node. A rate of 0.0 disables the feature.
+
+       .. code-block:: xml
+
+          <hardware>
+            <plugin>my_package/MyHardware</plugin>
+            <param name="status_publish_rate">10.0</param>
+          </hardware>
+
    #.  IMPORTANT: At the end of your file after the namespace is closed, add the ``PLUGINLIB_EXPORT_CLASS`` macro.
 
       For this you will need to include the ``"pluginlib/class_list_macros.hpp"`` header.
