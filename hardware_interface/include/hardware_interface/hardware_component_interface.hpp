@@ -625,6 +625,24 @@ public:
     lifecycle_state_ = new_state;
   }
 
+  /// Does the state interface exist?
+  /**
+   * \param[in] interface_name The name of the state interface.
+   * \return true if the state interface exists, false otherwise.
+   */
+  bool has_state(const std::string & interface_name) const
+  {
+    return hardware_states_.find(interface_name) != hardware_states_.end();
+  }
+
+  /// Set the value of a state interface.
+  /**
+   * \tparam T The type of the value to be stored.
+   * \param[in] interface_name The name of the state interface to access.
+   * \param[in] value The value to store.
+   * \throws std::runtime_error This method throws a runtime error if it cannot
+   * access the state interface.
+   */
   template <typename T>
   void set_state(const std::string & interface_name, const T & value)
   {
@@ -643,6 +661,14 @@ public:
     std::ignore = handle->set_value(lock, value);
   }
 
+  /// Get the value from a state interface.
+  /**
+   * \tparam T The type of the value to be retrieved.
+   * \param[in] interface_name The name of the state interface to access.
+   * \return The value obtained from the interface.
+   * \throws std::runtime_error This method throws a runtime error if it cannot
+   * access the state interface or its stored value.
+   */
   template <typename T = double>
   T get_state(const std::string & interface_name) const
   {
@@ -669,6 +695,25 @@ public:
     return opt_value.value();
   }
 
+  /// Does the command interface exist?
+  /**
+   * \param[in] interface_name The name of the command interface.
+   * \return true if the command interface exists, false otherwise.
+   */
+  bool has_command(const std::string & interface_name) const
+  {
+    return hardware_commands_.find(interface_name) != hardware_commands_.end();
+  }
+
+  /// Set the value of a command interface.
+  /**
+   * \tparam T The type of the value to be stored.
+   * \param interface_name The name of the command
+   * interface to access.
+   * \param value The value to store.
+   * \throws This method throws a runtime error if it
+   * cannot access the command interface.
+   */
   template <typename T>
   void set_command(const std::string & interface_name, const T & value)
   {
@@ -687,6 +732,14 @@ public:
     std::ignore = handle->set_value(lock, value);
   }
 
+  ///  Get the value from a command interface.
+  /**
+   * \tparam T The type of the value to be retrieved.
+   * \param[in] interface_name The name of the command interface to access.
+   * \return The value obtained from the interface.
+   * \throws std::runtime_error This method throws a runtime error if it cannot
+   * access the command interface or its stored value.
+   */
   template <typename T = double>
   T get_command(const std::string & interface_name) const
   {
