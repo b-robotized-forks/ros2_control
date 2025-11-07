@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 #include "rclcpp/rclcpp.hpp"
 
 namespace hardware_interface

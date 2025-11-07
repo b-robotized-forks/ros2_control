@@ -15,8 +15,8 @@
 #ifndef CONTROLLER_MANAGER__CONTROLLER_MANAGER_HPP_
 #define CONTROLLER_MANAGER__CONTROLLER_MANAGER_HPP_
 
-#include <map>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -46,10 +46,10 @@
 
 #include "pluginlib/class_loader.hpp"
 
+#include "lifecycle_msgs/msg/state.hpp"
 #include "rclcpp/executor.hpp"
 #include "rclcpp/node.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
-#include "lifecycle_msgs/msg/state.hpp"
 #include "std_msgs/msg/string.hpp"
 
 namespace controller_manager
@@ -58,59 +58,55 @@ class ParamListener;
 struct Params;
 class ControllerManager;
 using ControllersListIterator = std::vector<controller_manager::ControllerSpec>::const_iterator;
-using LifecycleCallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+using LifecycleCallbackReturn =
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 rclcpp::NodeOptions get_cm_node_options();
 
-
 // Class which defines and manages the ControllerManager state machine.
-class ControllerManagerStateMachine : public rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface
+class ControllerManagerStateMachine
+: public rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface
 {
 public:
-  ControllerManagerStateMachine(ControllerManager * cm) : cm_(cm) {};
+  explicit ControllerManagerStateMachine(ControllerManager * cm) : cm_(cm) {}
 
   LifecycleCallbackReturn on_configure(const rclcpp_lifecycle::State & /*previous_state*/) override;
   LifecycleCallbackReturn on_activate(const rclcpp_lifecycle::State & /*previous_state*/) override;
-  LifecycleCallbackReturn on_deactivate(const rclcpp_lifecycle::State & /*previous_state*/) override;
+  LifecycleCallbackReturn on_deactivate(
+    const rclcpp_lifecycle::State & /*previous_state*/) override;
   LifecycleCallbackReturn on_shutdown(const rclcpp_lifecycle::State & /*previous_state*/) override;
-  LifecycleCallbackReturn on_cleanup(const rclcpp_lifecycle::State & /*previous_state*/) override {
-    return LifecycleCallbackReturn::FAILURE; // unused for now.
+  LifecycleCallbackReturn on_cleanup(const rclcpp_lifecycle::State & /*previous_state*/) override
+  {
+    return LifecycleCallbackReturn::FAILURE;  // unused for now.
   };
-  LifecycleCallbackReturn on_error(const rclcpp_lifecycle::State & /*previous_state*/) override {
-    return LifecycleCallbackReturn::FAILURE; // unused for now.
+  LifecycleCallbackReturn on_error(const rclcpp_lifecycle::State & /*previous_state*/) override
+  {
+    return LifecycleCallbackReturn::FAILURE;  // unused for now.
   };
 
   const uint8_t & get_state_id() const { return current_state_id_; }
-  const rclcpp_lifecycle::State get_state() const {
-    switch (current_state_id_){
+  const rclcpp_lifecycle::State get_state() const
+  {
+    switch (current_state_id_)
+    {
       case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
         return rclcpp_lifecycle::State{
-          current_state_id_,
-          hardware_interface::lifecycle_state_names::UNCONFIGURED
-        };
+          current_state_id_, hardware_interface::lifecycle_state_names::UNCONFIGURED};
         break;
       case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
         return rclcpp_lifecycle::State{
-          current_state_id_,
-          hardware_interface::lifecycle_state_names::INACTIVE
-        };
+          current_state_id_, hardware_interface::lifecycle_state_names::INACTIVE};
         break;
       case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
         return rclcpp_lifecycle::State{
-          current_state_id_,
-          hardware_interface::lifecycle_state_names::ACTIVE
-        };
+          current_state_id_, hardware_interface::lifecycle_state_names::ACTIVE};
         break;
       case lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED:
         return rclcpp_lifecycle::State{
-          current_state_id_,
-          hardware_interface::lifecycle_state_names::FINALIZED
-        };
+          current_state_id_, hardware_interface::lifecycle_state_names::FINALIZED};
         break;
       case lifecycle_msgs::msg::State::PRIMARY_STATE_UNKNOWN:
         return rclcpp_lifecycle::State{
-          current_state_id_,
-          hardware_interface::lifecycle_state_names::UNKNOWN
-        };
+          current_state_id_, hardware_interface::lifecycle_state_names::UNKNOWN};
         break;
     }
     // should not be reached
@@ -220,7 +216,8 @@ public:
    * @note Checks if the controller manager is in the correct state for the transition, while
    * ResourceManager checks if the component itself is in the correct state for the transition
    */
-  hardware_interface::return_type set_hardware_component_state(const std::string & hardware_component_name, rclcpp_lifecycle::State & target_state);
+  hardware_interface::return_type set_hardware_component_state(
+    const std::string & hardware_component_name, rclcpp_lifecycle::State & target_state);
 
   /// configure_controller Configure controller by name calling their "configure" method.
   /**
@@ -333,12 +330,14 @@ public:
   rclcpp::Clock::SharedPtr get_trigger_clock() const;
 
 protected:
-  friend class controller_manager::ControllerManagerStateMachine; // allow access to private members of the state machine
+  friend class controller_manager::ControllerManagerStateMachine;  // allow access to private
+                                                                   // members of the state machine
 
-  /// \brief True if atleast one controller which claims command interfaces is active.
+  /// \brief True if at least one controller which claims command interfaces is active.
   bool any_commander_controller_active();
 
-  /// \brief here we wait on robot_description, get parameters, initialize services and instantiate ResourceManager
+  /// \brief here we wait on robot_description, get parameters, initialize services and instantiate
+  /// ResourceManager
   LifecycleCallbackReturn configure();
   void init_services();
   void initialize_parameters();
@@ -347,9 +346,11 @@ protected:
   bool allow_inactive_ = false;
   bool allow_active_ = false;
 
-  /// \brief Validates if preconditions are fulfilled for a transition (is cm ready for the transition), attempts transition
+  /// \brief Validates if preconditions are fulfilled for a transition (is cm ready for the
+  /// transition), attempts transition
   void lifecycle_transition_to(uint8_t target_state_id);
-  /// \brief This performs a full teardown, shutting down all components, resetting the robot description and resetting the resource manager.
+  /// \brief This performs a full teardown, shutting down all components, resetting the robot
+  /// description and resetting the resource manager.
   void teardown();
   void cancel_executor();
 
