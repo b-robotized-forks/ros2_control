@@ -483,28 +483,6 @@ ControllerManager::ControllerManager(
     std::make_shared<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>(
       kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
   cm_node_options_(options),
-  runtime_config_prefix_path_(runtime_config_prefix_path)
-{
-  state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
-  initialize_parameters();
-  configure();
-}
-
-ControllerManager::ControllerManager(
-  std::shared_ptr<rclcpp::Executor> executor, const std::string & urdf,
-  bool activate_all_hw_components, const std::string & manager_node_name,
-  const std::string & node_namespace, const rclcpp::NodeOptions & options,
-  const std::string & runtime_config_prefix_path)
-: rclcpp::Node(manager_node_name, node_namespace, options),
-  diagnostics_updater_(this),
-  executor_(executor),
-  loader_(
-    std::make_shared<pluginlib::ClassLoader<controller_interface::ControllerInterface>>(
-      kControllerInterfaceNamespace, kControllerInterfaceClassName)),
-  chainable_loader_(
-    std::make_shared<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>(
-      kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
-  cm_node_options_(options),
   robot_description_(urdf),
   runtime_config_prefix_path_(runtime_config_prefix_path)
 {
