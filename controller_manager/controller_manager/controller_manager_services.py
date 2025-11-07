@@ -444,7 +444,13 @@ def set_controller_parameters(
 
 
 def set_controller_parameters_from_param_files(
-    node, controller_manager_name: str, controller_name: str, parameter_files: list, param_file_remote: bool, controller_to_type: dict[str, str], namespace=None
+    node,
+    controller_manager_name: str,
+    controller_name: str,
+    parameter_files: list,
+    param_file_remote: bool,
+    controller_to_type: dict[str, str],
+    namespace=None,
 ):
     spawner_namespace = namespace if namespace else node.get_namespace()
 
@@ -458,7 +464,7 @@ def set_controller_parameters_from_param_files(
             parameter_files,
         ):
             return False
-        
+
         controller_type = controller_to_type.get(controller_name)
         print(f"setting type = {controller_type}")
         if controller_type and not set_controller_parameters(

@@ -1524,7 +1524,8 @@ bool ResourceManager::load_and_initialize_components(
   }
 
   if (
-    components_are_loaded_and_initialized_ && validate_storage(hardware_info, components_to_not_load))
+    components_are_loaded_and_initialized_ &&
+    validate_storage(hardware_info, components_to_not_load))
   {
     std::lock_guard<std::recursive_mutex> guard(resources_lock_);
     read_write_status.failed_hardware_names.reserve(
@@ -1553,7 +1554,8 @@ bool ResourceManager::load_and_initialize_components(
   resource_storage_->node_namespace_ = params.node_namespace;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  return load_and_initialize_components(params.robot_description, params.update_rate, params.components_to_not_load);
+  return load_and_initialize_components(
+    params.robot_description, params.update_rate, params.components_to_not_load);
 #pragma GCC diagnostic pop
 }
 
