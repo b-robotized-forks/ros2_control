@@ -55,9 +55,10 @@ int main(int argc, char ** argv)
   cm_node_options.arguments(node_arguments);
 
   auto cm = std::make_shared<controller_manager::ControllerManager>(
-    executor, manager_node_name, "", cm_node_options,
-    "/home/sr-control-box/workspace/rt_sdk_3_2_0/public/samples-cpp/ros2_control_ament/src/"
-    "ctrlx_controller_manager/runtime_dependencies/controller_config_files");
+    executor, manager_node_name, "", cm_node_options);
+
+  cm->lifecycle_allow_inactive(true);
+  cm->lifecycle_allow_active(true);
 
   const bool use_sim_time = cm->get_parameter_or("use_sim_time", false);
 
