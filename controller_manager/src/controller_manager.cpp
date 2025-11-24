@@ -562,8 +562,7 @@ void ControllerManager::init_controller_manager()
   }else
   {
     RCLCPP_INFO(get_logger(),
-      "Resource Manager has been successfully initialized. Starting Controller Manager "
-      "services...");
+      "Resource Manager successfully initialized. Starting Controller Manager services...");
     init_services();
   }
 
@@ -889,7 +888,6 @@ void ControllerManager::init_resource_manager(const std::string & robot_descript
     }
   }
 }
-
 
 void ControllerManager::init_services()
 {
