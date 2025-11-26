@@ -656,17 +656,35 @@ public:
   template <class HardwareT>
   void import_state_interfaces(HardwareT & hardware)
   {
-    auto interfaces = hardware.export_state_interfaces();
-    const auto interface_names = add_state_interfaces(interfaces);
-    hardware_info_map_[hardware.get_name()].state_interfaces = interface_names;
+    try
+    {
+      auto interfaces = hardware.export_state_interfaces();
+      const auto interface_names = add_state_interfaces(interfaces);
+      hardware_info_map_[hardware.get_name()].state_interfaces = interface_names;
 
-    RCLCPP_WARN_EXPRESSION(
-      get_logger(), interface_names.empty(),
-      "Importing state interfaces for the hardware '%s' returned no state interfaces.",
-      hardware.get_name().c_str());
-    hardware_info_map_[hardware.get_name()].state_interfaces = interface_names;
-    available_state_interfaces_.reserve(
-      available_state_interfaces_.capacity() + interface_names.size());
+      RCLCPP_WARN_EXPRESSION(
+        get_logger(), interface_names.empty(),
+        "Importing state interfaces for the hardware '%s' returned no state interfaces.",
+        hardware.get_name().c_str());
+
+      available_state_interfaces_.reserve(
+        available_state_interfaces_.capacity() + interface_names.size());
+    }
+    catch (const std::exception & ex)
+    {
+      RCLCPP_ERROR(
+        get_logger(),
+        "Exception of type : %s occurred while importing state interfaces for the hardware '%s' : "
+        "%s",
+        typeid(ex).name(), hardware.get_name().c_str(), ex.what());
+    }
+    catch (...)
+    {
+      RCLCPP_ERROR(
+        get_logger(),
+        "Unknown exception occurred while importing state interfaces for the hardware '%s'",
+        hardware.get_name().c_str());
+    }
   }
 
   void insert_command_interface(const CommandInterface::SharedPtr command_interface)
