@@ -131,6 +131,49 @@ TEST_F(ControllerManagerTest, init_controller_manager_with_invalid_urdf)
   EXPECT_TRUE(cm.has_valid_robot_description());
 }
 
+TEST_F(ControllerManagerTest, check_list_controller_with_missing_interface_does_not_throw)
+{
+  TestControllerManager cm(std::move(test_resource_manager_), executor_);
+
+  auto dummy = std::make_shared<DummyController>();
+
+  controller_manager::ControllerSpec spec;
+  spec.c = dummy;
+  spec.info.name = "dummy_controller";
+  spec.info.type = "DummyController";
+
+  cm.add_controller(spec);
+  auto ret = cm.configure_controller("dummy_controller");  // transitions to INACTIVE
+  EXPECT_EQ(ret, controller_interface::return_type::OK);
+
+  // Prepare request/response
+  auto req = std::make_shared<controller_manager_msgs::srv::ListControllers::Request>();
+  auto res = std::make_shared<controller_manager_msgs::srv::ListControllers::Response>();
+
+  // Call the service callback (should NOT throw even though interface is missing)
+  EXPECT_NO_THROW(cm.list_controllers_srv_cb_public(req, res));
+
+  ASSERT_EQ(res->controller.size(), 1);
+  EXPECT_EQ(res->controller[0].name, "dummy_controller");
+}
+
+TEST_F(ControllerManagerTest, list_hardware_components_with_data_type_errors_does_not_throw)
+{
+  auto mock_rm =
+    std::make_unique<MockResourceManagerWithErrors>(node_->get_clock(), rclcpp::get_logger("test"));
+
+  TestControllerManager cm(std::move(mock_rm), executor_);
+
+  auto req = std::make_shared<controller_manager_msgs::srv::ListHardwareComponents::Request>();
+  auto res = std::make_shared<controller_manager_msgs::srv::ListHardwareComponents::Response>();
+
+  // Should not throw, errors should be caught and logged
+  EXPECT_NO_THROW(cm.list_hardware_components_srv_cb_public(req, res));
+
+  const auto & component = res->component[0];
+  EXPECT_EQ(component.name, "dummy_component");
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
