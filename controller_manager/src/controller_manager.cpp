@@ -191,14 +191,37 @@ void get_active_controllers_using_command_interfaces_of_controller(
       "Controller '%s' not found in the list of controllers.", controller_name.c_str());
     return;
   }
-  const auto cmd_itfs = it->c->command_interface_configuration().names;
+
+  std::vector<std::string> cmd_itfs;
+  try
+  {
+    cmd_itfs = it->c->command_interface_configuration().names;
+  }
+  catch (const std::exception & e)
+  {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("ControllerManager::utils"),
+      "Failed to get command interfaces of controller '%s': %s", controller_name.c_str(), e.what());
+    return;  // Cannot proceed if we can't get its interfaces
+  }
+
   for (const auto & cmd_itf : cmd_itfs)
   {
     for (const auto & controller : controllers)
     {
-      const auto ctrl_cmd_itfs = controller.c->command_interface_configuration().names;
-      // check if the controller is active and has the command interface and make sure that it
-      // doesn't exist in the list already
+      std::vector<std::string> ctrl_cmd_itfs;
+      try
+      {
+        ctrl_cmd_itfs = controller.c->command_interface_configuration().names;
+      }
+      catch (const std::exception & e)
+      {
+        // Skip controllers in a state that doesn't allow interface retrieval
+        continue;
+      }
+
+      // check if the controller is active and has the command interface and make sure it doesn't
+      // exist already
       if (
         is_controller_active(controller.c) &&
         std::find(ctrl_cmd_itfs.begin(), ctrl_cmd_itfs.end(), cmd_itf) != ctrl_cmd_itfs.end())
@@ -214,17 +237,31 @@ void extract_command_interfaces_for_controller(
   const std::unique_ptr<hardware_interface::ResourceManager> & resource_manager,
   std::vector<std::string> & request_interface_list)
 {
-  auto command_interface_config = ctrl.c->command_interface_configuration();
-  std::vector<std::string> command_interface_names = {};
-  if (command_interface_config.type == controller_interface::interface_configuration_type::ALL)
+  std::vector<std::string> command_interface_names;
+
+  try
   {
-    command_interface_names = resource_manager->available_command_interfaces();
+    auto command_interface_config = ctrl.c->command_interface_configuration();
+
+    if (command_interface_config.type == controller_interface::interface_configuration_type::ALL)
+    {
+      command_interface_names = resource_manager->available_command_interfaces();
+    }
+    if (
+      command_interface_config.type ==
+      controller_interface::interface_configuration_type::INDIVIDUAL)
+    {
+      command_interface_names = command_interface_config.names;
+    }
   }
-  if (
-    command_interface_config.type == controller_interface::interface_configuration_type::INDIVIDUAL)
+  catch (const std::exception & e)
   {
-    command_interface_names = command_interface_config.names;
+    RCLCPP_ERROR(
+      rclcpp::get_logger("ControllerManager::utils"),
+      "Cannot get command interfaces for controller '%s': %s", ctrl.info.name.c_str(), e.what());
+    return;
   }
+
   request_interface_list.insert(
     request_interface_list.end(), command_interface_names.begin(), command_interface_names.end());
 }
@@ -239,11 +276,26 @@ controller_interface::return_type evaluate_switch_result(
   auto switch_result = controller_interface::return_type::OK;
   std::string unable_to_activate_controllers("");
   std::string unable_to_deactivate_controllers("");
+
   for (auto & controller : controllers_spec)
   {
+    controller_interface::InterfaceConfiguration command_interface_config;
+
     if (is_controller_active(controller.c))
     {
-      auto command_interface_config = controller.c->command_interface_configuration();
+      try
+      {
+        command_interface_config = controller.c->command_interface_configuration();
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_ERROR(
+          logger, "Controller '%s': exception while getting command_interface_configuration(): %s",
+          controller.info.name.c_str(), e.what());
+        switch_result = controller_interface::return_type::ERROR;
+        continue;
+      }
+
       if (command_interface_config.type == controller_interface::interface_configuration_type::ALL)
       {
         controller.info.claimed_interfaces = resource_manager->available_command_interfaces();
@@ -1403,8 +1455,31 @@ controller_interface::return_type ControllerManager::configure_controller(
   }
 
   // let's update the list of following and preceding controllers
-  const auto cmd_itfs = controller->command_interface_configuration().names;
-  const auto state_itfs = controller->state_interface_configuration().names;
+  std::vector<std::string> cmd_itfs;
+  std::vector<std::string> state_itfs;
+  try
+  {
+    cmd_itfs = controller->command_interface_configuration().names;
+  }
+  catch (const std::exception & e)
+  {
+    RCLCPP_ERROR(
+      get_logger(), "Cannot get command interface configuration for controller '%s': %s",
+      controller_name.c_str(), e.what());
+    return controller_interface::return_type::ERROR;
+  }
+
+  try
+  {
+    state_itfs = controller->state_interface_configuration().names;
+  }
+  catch (const std::exception & e)
+  {
+    RCLCPP_ERROR(
+      get_logger(), "Cannot get state interface configuration for controller '%s': %s",
+      controller_name.c_str(), e.what());
+    return controller_interface::return_type::ERROR;
+  }
 
   // Check if the cmd_itfs and the state_itfs are unique
   if (!ros2_control::is_unique(cmd_itfs))
@@ -1747,7 +1822,6 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
         message = fmt::format(
           FMT_COMPILE("Controller with name '{}' is already active."), controller_it->info.name);
         RCLCPP_WARN(get_logger(), "%s", message.c_str());
-        RCLCPP_WARN(get_logger(), "%s", message.c_str());
         status = controller_interface::return_type::ERROR;
       }
     }
@@ -1981,8 +2055,18 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
     if (in_activate_list)
     {
       std::vector<std::string> interface_names = {};
-
-      auto command_interface_config = controller.c->command_interface_configuration();
+      controller_interface::InterfaceConfiguration command_interface_config;
+      try
+      {
+        command_interface_config = controller.c->command_interface_configuration();
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_ERROR(
+          get_logger(), "Controller '%s': exception while getting command interfaces: %s",
+          controller.info.name.c_str(), e.what());
+        continue;
+      }
       if (command_interface_config.type == controller_interface::interface_configuration_type::ALL)
       {
         interface_names = resource_manager_->available_command_interfaces();
@@ -1995,7 +2079,18 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
       }
 
       std::vector<std::string> interfaces = {};
-      auto state_interface_config = controller.c->state_interface_configuration();
+      controller_interface::InterfaceConfiguration state_interface_config;
+      try
+      {
+        state_interface_config = controller.c->state_interface_configuration();
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_ERROR(
+          get_logger(), "Controller '%s': exception while getting state interfaces: %s",
+          controller.info.name.c_str(), e.what());
+        continue;
+      }
       if (state_interface_config.type == controller_interface::interface_configuration_type::ALL)
       {
         interfaces = resource_manager_->available_state_interfaces();
@@ -2338,7 +2433,19 @@ void ControllerManager::activate_controllers(
 
     bool assignment_successful = true;
     // assign command interfaces to the controller
-    auto command_interface_config = controller->command_interface_configuration();
+    controller_interface::InterfaceConfiguration command_interface_config;
+    try
+    {
+      command_interface_config = controller->command_interface_configuration();
+    }
+    catch (const std::exception & e)
+    {
+      RCLCPP_ERROR(
+        get_logger(), "Cannot get command interface configuration for controller '%s': %s",
+        controller_name.c_str(), e.what());
+      assignment_successful = false;
+      continue;
+    }
     // default to controller_interface::configuration_type::NONE
     std::vector<std::string> command_interface_names = {};
     if (command_interface_config.type == controller_interface::interface_configuration_type::ALL)
@@ -2355,6 +2462,15 @@ void ControllerManager::activate_controllers(
     command_loans.reserve(command_interface_names.size());
     for (const auto & command_interface : command_interface_names)
     {
+      if (!resource_manager_->command_interface_exists(command_interface))
+      {
+        RCLCPP_ERROR(
+          get_logger(), "Command interface '%s' required by controller '%s' does not exist.",
+          command_interface.c_str(), controller_name.c_str());
+        assignment_successful = false;
+        break;
+      }
+
       if (resource_manager_->command_interface_is_claimed(command_interface))
       {
         RCLCPP_ERROR(
@@ -2389,7 +2505,19 @@ void ControllerManager::activate_controllers(
     }
 
     // assign state interfaces to the controller
-    auto state_interface_config = controller->state_interface_configuration();
+    controller_interface::InterfaceConfiguration state_interface_config;
+    try
+    {
+      state_interface_config = controller->state_interface_configuration();
+    }
+    catch (const std::exception & e)
+    {
+      RCLCPP_ERROR(
+        get_logger(), "Cannot get state interface configuration for controller '%s': %s",
+        controller_name.c_str(), e.what());
+      assignment_successful = false;
+      continue;
+    }
     // default to controller_interface::configuration_type::NONE
     std::vector<std::string> state_interface_names = {};
     if (state_interface_config.type == controller_interface::interface_configuration_type::ALL)
@@ -2405,6 +2533,14 @@ void ControllerManager::activate_controllers(
     state_loans.reserve(state_interface_names.size());
     for (const auto & state_interface : state_interface_names)
     {
+      if (!resource_manager_->state_interface_exists(state_interface))
+      {
+        RCLCPP_ERROR(
+          get_logger(), "State interface '%s' required by controller '%s' does not exist.",
+          state_interface.c_str(), controller_name.c_str());
+        assignment_successful = false;
+        break;
+      }
       try
       {
         state_loans.emplace_back(resource_manager_->claim_state_interface(state_interface));
@@ -2515,124 +2651,193 @@ void ControllerManager::list_controllers_srv_cb(
   const std::shared_ptr<controller_manager_msgs::srv::ListControllers::Request>,
   std::shared_ptr<controller_manager_msgs::srv::ListControllers::Response> response)
 {
-  // lock services
-  RCLCPP_DEBUG(get_logger(), "list controller service called");
-  std::lock_guard<std::mutex> services_guard(services_lock_);
-  RCLCPP_DEBUG(get_logger(), "list controller service locked");
-
-  // lock controllers
-  std::lock_guard<std::recursive_mutex> guard(rt_controllers_wrapper_.controllers_lock_);
-  const std::vector<ControllerSpec> & controllers = rt_controllers_wrapper_.get_updated_list(guard);
-  // create helper containers to create chained controller connections
-  std::unordered_map<std::string, std::vector<std::string>> controller_chain_interface_map;
-  std::unordered_map<std::string, std::set<std::string>> controller_chain_map;
-  std::vector<size_t> chained_controller_indices;
-  for (size_t i = 0; i < controllers.size(); ++i)
+  try
   {
-    controller_chain_map[controllers[i].info.name] = {};
-  }
+    // lock services
+    RCLCPP_DEBUG(get_logger(), "list controller service called");
+    std::lock_guard<std::mutex> services_guard(services_lock_);
+    RCLCPP_DEBUG(get_logger(), "list controller service locked");
 
-  response->controller.reserve(controllers.size());
-  for (size_t i = 0; i < controllers.size(); ++i)
-  {
-    controller_manager_msgs::msg::ControllerState controller_state;
+    // lock controllers
+    std::lock_guard<std::recursive_mutex> guard(rt_controllers_wrapper_.controllers_lock_);
+    const std::vector<ControllerSpec> & controllers =
+      rt_controllers_wrapper_.get_updated_list(guard);
 
-    controller_state.name = controllers[i].info.name;
-    controller_state.type = controllers[i].info.type;
-    controller_state.is_async = controllers[i].c->is_async();
-    controller_state.update_rate = static_cast<uint16_t>(controllers[i].c->get_update_rate());
-    controller_state.claimed_interfaces = controllers[i].info.claimed_interfaces;
-    controller_state.state = controllers[i].c->get_lifecycle_state().label();
-    controller_state.is_chainable = controllers[i].c->is_chainable();
-    controller_state.is_chained = controllers[i].c->is_in_chained_mode();
+    // create helper containers to create chained controller connections
+    std::unordered_map<std::string, std::vector<std::string>> controller_chain_interface_map;
+    std::unordered_map<std::string, std::set<std::string>> controller_chain_map;
+    std::vector<size_t> chained_controller_indices;
 
-    // Get information about interfaces if controller are in 'inactive' or 'active' state
-    if (is_controller_active(controllers[i].c) || is_controller_inactive(controllers[i].c))
+    for (size_t i = 0; i < controllers.size(); ++i)
     {
-      auto command_interface_config = controllers[i].c->command_interface_configuration();
-      if (command_interface_config.type == controller_interface::interface_configuration_type::ALL)
-      {
-        controller_state.required_command_interfaces = resource_manager_->command_interface_keys();
-      }
-      else if (
-        command_interface_config.type ==
-        controller_interface::interface_configuration_type::INDIVIDUAL)
-      {
-        controller_state.required_command_interfaces = command_interface_config.names;
-      }
+      controller_chain_map[controllers[i].info.name] = {};
+    }
 
-      auto state_interface_config = controllers[i].c->state_interface_configuration();
-      if (state_interface_config.type == controller_interface::interface_configuration_type::ALL)
+    response->controller.reserve(controllers.size());
+
+    for (size_t i = 0; i < controllers.size(); ++i)
+    {
+      try
       {
-        controller_state.required_state_interfaces = resource_manager_->state_interface_keys();
-      }
-      else if (
-        state_interface_config.type ==
-        controller_interface::interface_configuration_type::INDIVIDUAL)
-      {
-        controller_state.required_state_interfaces = state_interface_config.names;
-      }
-      // check for chained interfaces
-      for (const auto & interface : controller_state.required_command_interfaces)
-      {
-        auto prefix_interface_type_pair = split_command_interface(interface);
-        auto prefix = prefix_interface_type_pair.first;
-        auto interface_type = prefix_interface_type_pair.second;
-        if (controller_chain_map.find(prefix) != controller_chain_map.end())
+        controller_manager_msgs::msg::ControllerState controller_state;
+
+        controller_state.name = controllers[i].info.name;
+        controller_state.type = controllers[i].info.type;
+        controller_state.is_async = controllers[i].c->is_async();
+        controller_state.update_rate = static_cast<uint16_t>(controllers[i].c->get_update_rate());
+        controller_state.claimed_interfaces = controllers[i].info.claimed_interfaces;
+        controller_state.state = controllers[i].c->get_lifecycle_state().label();
+        controller_state.is_chainable = controllers[i].c->is_chainable();
+        controller_state.is_chained = controllers[i].c->is_in_chained_mode();
+
+        // Get information about interfaces if controller is 'inactive' or 'active'
+        if (is_controller_active(controllers[i].c) || is_controller_inactive(controllers[i].c))
         {
-          controller_chain_map[controller_state.name].insert(prefix);
-          controller_chain_interface_map[controller_state.name].push_back(interface_type);
+          auto command_interface_config = controllers[i].c->command_interface_configuration();
+          if (
+            command_interface_config.type ==
+            controller_interface::interface_configuration_type::ALL)
+          {
+            controller_state.required_command_interfaces =
+              resource_manager_->command_interface_keys();
+          }
+          else if (
+            command_interface_config.type ==
+            controller_interface::interface_configuration_type::INDIVIDUAL)
+          {
+            controller_state.required_command_interfaces = command_interface_config.names;
+          }
+
+          auto state_interface_config = controllers[i].c->state_interface_configuration();
+          if (
+            state_interface_config.type == controller_interface::interface_configuration_type::ALL)
+          {
+            controller_state.required_state_interfaces = resource_manager_->state_interface_keys();
+          }
+          else if (
+            state_interface_config.type ==
+            controller_interface::interface_configuration_type::INDIVIDUAL)
+          {
+            controller_state.required_state_interfaces = state_interface_config.names;
+          }
+
+          // Validate that required state interfaces exist to prevent out_of_range
+          for (const auto & iface : controller_state.required_state_interfaces)
+          {
+            if (!resource_manager_->state_interface_exists(iface))
+            {
+              RCLCPP_WARN(
+                get_logger(), "Controller '%s' requested unknown state interface '%s'",
+                controller_state.name.c_str(), iface.c_str());
+            }
+          }
+          // Validate that required command interfaces exist to prevent out_of_range
+          for (const auto & iface : controller_state.required_command_interfaces)
+          {
+            if (!resource_manager_->command_interface_exists(iface))
+            {
+              RCLCPP_WARN(
+                get_logger(), "Controller '%s' requested unknown command interface '%s'",
+                controller_state.name.c_str(), iface.c_str());
+            }
+          }
+          // check for chained interfaces
+          for (const auto & interface : controller_state.required_command_interfaces)
+          {
+            auto prefix_interface_type_pair = split_command_interface(interface);
+            auto prefix = prefix_interface_type_pair.first;
+            auto interface_type = prefix_interface_type_pair.second;
+            if (controller_chain_map.find(prefix) != controller_chain_map.end())
+            {
+              controller_chain_map[controller_state.name].insert(prefix);
+              controller_chain_interface_map[controller_state.name].push_back(interface_type);
+            }
+          }
+
+          // check reference interfaces only if controller is inactive or active
+          if (controllers[i].c->is_chainable())
+          {
+            auto references =
+              resource_manager_->get_controller_reference_interface_names(controllers[i].info.name);
+            auto exported_state_interfaces =
+              resource_manager_->get_controller_exported_state_interface_names(
+                controllers[i].info.name);
+            controller_state.reference_interfaces.reserve(references.size());
+            controller_state.exported_state_interfaces.reserve(exported_state_interfaces.size());
+
+            for (const auto & reference : references)
+            {
+              const std::string prefix_name = controllers[i].c->get_node()->get_name();
+              const std::string interface_name = reference.substr(prefix_name.size() + 1);
+              controller_state.reference_interfaces.push_back(interface_name);
+            }
+
+            for (const auto & state_interface : exported_state_interfaces)
+            {
+              const std::string prefix_name = controllers[i].c->get_node()->get_name();
+              const std::string interface_name = state_interface.substr(prefix_name.size() + 1);
+              controller_state.exported_state_interfaces.push_back(interface_name);
+            }
+          }
+        }
+
+        response->controller.push_back(controller_state);
+
+        // keep track of controllers that are part of a chain
+        if (
+          !controller_chain_interface_map[controller_state.name].empty() ||
+          controllers[i].c->is_chainable())
+        {
+          chained_controller_indices.push_back(i);
         }
       }
-      // check reference interfaces only if controller is inactive or active
-      if (controllers[i].c->is_chainable())
+      catch (const std::out_of_range & e)
       {
-        auto references =
-          resource_manager_->get_controller_reference_interface_names(controllers[i].info.name);
-        auto exported_state_interfaces =
-          resource_manager_->get_controller_exported_state_interface_names(
-            controllers[i].info.name);
-        controller_state.reference_interfaces.reserve(references.size());
-        controller_state.exported_state_interfaces.reserve(exported_state_interfaces.size());
-        for (const auto & reference : references)
-        {
-          const std::string prefix_name = controllers[i].c->get_node()->get_name();
-          const std::string interface_name = reference.substr(prefix_name.size() + 1);
-          controller_state.reference_interfaces.push_back(interface_name);
-        }
-        for (const auto & state_interface : exported_state_interfaces)
-        {
-          const std::string prefix_name = controllers[i].c->get_node()->get_name();
-          const std::string interface_name = state_interface.substr(prefix_name.size() + 1);
-          controller_state.exported_state_interfaces.push_back(interface_name);
-        }
+        RCLCPP_ERROR(
+          get_logger(), "Controller '%s': interface out of bounds: %s",
+          controllers[i].info.name.c_str(), e.what());
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_ERROR(
+          get_logger(), "Controller '%s': exception: %s", controllers[i].info.name.c_str(),
+          e.what());
       }
     }
-    response->controller.push_back(controller_state);
-    // keep track of controllers that are part of a chain
-    if (
-      !controller_chain_interface_map[controller_state.name].empty() ||
-      controllers[i].c->is_chainable())
-    {
-      chained_controller_indices.push_back(i);
-    }
-  }
 
-  // create chain connections for all controllers in a chain
-  for (const auto & index : chained_controller_indices)
+    // create chain connections for all controllers in a chain
+    for (const auto & index : chained_controller_indices)
+    {
+      try
+      {
+        auto & controller_state = response->controller[index];
+        auto chained_set = controller_chain_map[controller_state.name];
+        for (const auto & chained_name : chained_set)
+        {
+          controller_manager_msgs::msg::ChainConnection connection;
+          connection.name = chained_name;
+          connection.reference_interfaces = controller_chain_interface_map[controller_state.name];
+          controller_state.chain_connections.push_back(connection);
+        }
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_ERROR(
+          get_logger(), "Failed creating chained connections for controller '%s': %s",
+          response->controller[index].name.c_str(), e.what());
+      }
+    }
+
+    RCLCPP_DEBUG(get_logger(), "list controller service finished");
+  }
+  catch (const std::exception & e)
   {
-    auto & controller_state = response->controller[index];
-    auto chained_set = controller_chain_map[controller_state.name];
-    for (const auto & chained_name : chained_set)
-    {
-      controller_manager_msgs::msg::ChainConnection connection;
-      connection.name = chained_name;
-      connection.reference_interfaces = controller_chain_interface_map[controller_state.name];
-      controller_state.chain_connections.push_back(connection);
-    }
+    RCLCPP_ERROR(get_logger(), "list_controllers_srv_cb failed: %s", e.what());
   }
-
-  RCLCPP_DEBUG(get_logger(), "list controller service finished");
+  catch (...)
+  {
+    RCLCPP_ERROR(get_logger(), "list_controllers_srv_cb failed due to unknown exception");
+  }
 }
 
 void ControllerManager::list_controller_types_srv_cb(
@@ -2814,97 +3019,165 @@ void ControllerManager::list_hardware_components_srv_cb(
   const std::shared_ptr<controller_manager_msgs::srv::ListHardwareComponents::Request>,
   std::shared_ptr<controller_manager_msgs::srv::ListHardwareComponents::Response> response)
 {
-  RCLCPP_DEBUG(get_logger(), "list hardware components service called");
-  std::lock_guard<std::mutex> guard(services_lock_);
-  RCLCPP_DEBUG(get_logger(), "list hardware components service locked");
-
-  auto hw_components_info = resource_manager_->get_components_status();
-
-  response->component.reserve(hw_components_info.size());
-
-  for (const auto & [component_name, component_info] : hw_components_info)
+  try
   {
-    auto component = controller_manager_msgs::msg::HardwareComponentState();
-    component.name = component_name;
-    component.type = component_info.type;
-    component.is_async = component_info.is_async;
-    component.rw_rate = static_cast<uint16_t>(component_info.rw_rate);
-    component.plugin_name = component_info.plugin_name;
-    component.state.id = component_info.state.id();
-    component.state.label = component_info.state.label();
+    RCLCPP_DEBUG(get_logger(), "list hardware components service called");
+    std::lock_guard<std::mutex> guard(services_lock_);
+    RCLCPP_DEBUG(get_logger(), "list hardware components service locked");
 
-    component.command_interfaces.reserve(component_info.command_interfaces.size());
-    for (const auto & interface : component_info.command_interfaces)
+    auto hw_components_info = resource_manager_->get_components_status();
+
+    response->component.reserve(hw_components_info.size());
+
+    for (const auto & [component_name, component_info] : hw_components_info)
     {
-      controller_manager_msgs::msg::HardwareInterface hwi;
-      hwi.name = interface;
-      hwi.data_type = resource_manager_->get_command_interface_data_type(interface);
-      hwi.is_available = resource_manager_->command_interface_is_available(interface);
-      hwi.is_claimed = resource_manager_->command_interface_is_claimed(interface);
-      // TODO(destogl): Add here mapping to controller that has claimed or
-      // can be claiming this interface
-      // Those should be two variables
-      // if (hwi.is_claimed)
-      // {
-      //   for (const auto & controller : controllers_that_use_interface(interface))
-      //   {
-      //     if (is_controller_active(controller))
-      //     {
-      //       hwi.is_claimed_by = controller;
-      //     }
-      //   }
-      // }
-      // hwi.is_used_by = controllers_that_use_interface(interface);
-      component.command_interfaces.push_back(hwi);
+      try
+      {
+        auto component = controller_manager_msgs::msg::HardwareComponentState();
+        component.name = component_name;
+        component.type = component_info.type;
+        component.is_async = component_info.is_async;
+        component.rw_rate = static_cast<uint16_t>(component_info.rw_rate);
+        component.plugin_name = component_info.plugin_name;
+        component.state.id = component_info.state.id();
+        component.state.label = component_info.state.label();
+
+        component.command_interfaces.reserve(component_info.command_interfaces.size());
+        for (const auto & interface : component_info.command_interfaces)
+        {
+          try
+          {
+            controller_manager_msgs::msg::HardwareInterface hwi;
+            hwi.name = interface;
+            hwi.data_type = resource_manager_->get_command_interface_data_type(interface);
+            hwi.is_available = resource_manager_->command_interface_is_available(interface);
+            hwi.is_claimed = resource_manager_->command_interface_is_claimed(interface);
+            // TODO(destogl): Add here mapping to controller that has claimed or
+            // can be claiming this interface
+            // Those should be two variables
+            // if (hwi.is_claimed)
+            // {
+            //   for (const auto & controller : controllers_that_use_interface(interface))
+            //   {
+            //     if (is_controller_active(controller))
+            //     {
+            //       hwi.is_claimed_by = controller;
+            //     }
+            //   }
+            // }
+            // hwi.is_used_by = controllers_that_use_interface(interface);
+            component.command_interfaces.push_back(hwi);
+          }
+          catch (const std::exception & e)
+          {
+            RCLCPP_WARN(
+              get_logger(), "Failed to get command interface '%s': %s", interface.c_str(),
+              e.what());
+          }
+        }
+
+        component.state_interfaces.reserve(component_info.state_interfaces.size());
+        for (const auto & interface : component_info.state_interfaces)
+        {
+          try
+          {
+            controller_manager_msgs::msg::HardwareInterface hwi;
+            hwi.name = interface;
+            hwi.data_type = resource_manager_->get_state_interface_data_type(interface);
+            hwi.is_available = resource_manager_->state_interface_is_available(interface);
+            hwi.is_claimed = false;
+            component.state_interfaces.push_back(hwi);
+          }
+          catch (const std::exception & e)
+          {
+            RCLCPP_WARN(
+              get_logger(), "Failed to get state interface '%s': %s", interface.c_str(), e.what());
+          }
+        }
+
+        response->component.push_back(component);
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_ERROR(
+          get_logger(), "Failed to process hardware component '%s': %s", component_name.c_str(),
+          e.what());
+      }
     }
 
-    component.state_interfaces.reserve(component_info.state_interfaces.size());
-    for (const auto & interface : component_info.state_interfaces)
-    {
-      controller_manager_msgs::msg::HardwareInterface hwi;
-      hwi.name = interface;
-      hwi.data_type = resource_manager_->get_state_interface_data_type(interface);
-      hwi.is_available = resource_manager_->state_interface_is_available(interface);
-      hwi.is_claimed = false;
-      component.state_interfaces.push_back(hwi);
-    }
-
-    response->component.push_back(component);
+    RCLCPP_DEBUG(get_logger(), "list hardware components service finished");
   }
-
-  RCLCPP_DEBUG(get_logger(), "list hardware components service finished");
+  catch (const std::exception & e)
+  {
+    RCLCPP_ERROR(get_logger(), "list_hardware_components_srv_cb failed: %s", e.what());
+  }
+  catch (...)
+  {
+    RCLCPP_ERROR(get_logger(), "list_hardware_components_srv_cb failed due to unknown exception");
+  }
 }
 
 void ControllerManager::list_hardware_interfaces_srv_cb(
   const std::shared_ptr<controller_manager_msgs::srv::ListHardwareInterfaces::Request>,
   std::shared_ptr<controller_manager_msgs::srv::ListHardwareInterfaces::Response> response)
 {
-  RCLCPP_DEBUG(get_logger(), "list hardware interfaces service called");
-  std::lock_guard<std::mutex> guard(services_lock_);
-  RCLCPP_DEBUG(get_logger(), "list hardware interfaces service locked");
-
-  auto state_interface_names = resource_manager_->state_interface_keys();
-  for (const auto & state_interface_name : state_interface_names)
+  try
   {
-    controller_manager_msgs::msg::HardwareInterface hwi;
-    hwi.name = state_interface_name;
-    hwi.is_available = resource_manager_->state_interface_is_available(state_interface_name);
-    hwi.data_type = resource_manager_->get_state_interface_data_type(state_interface_name);
-    hwi.is_claimed = false;
-    response->state_interfaces.push_back(hwi);
-  }
-  auto command_interface_names = resource_manager_->command_interface_keys();
-  for (const auto & command_interface_name : command_interface_names)
-  {
-    controller_manager_msgs::msg::HardwareInterface hwi;
-    hwi.name = command_interface_name;
-    hwi.is_available = resource_manager_->command_interface_is_available(command_interface_name);
-    hwi.is_claimed = resource_manager_->command_interface_is_claimed(command_interface_name);
-    hwi.data_type = resource_manager_->get_command_interface_data_type(command_interface_name);
-    response->command_interfaces.push_back(hwi);
-  }
+    RCLCPP_DEBUG(get_logger(), "list hardware interfaces service called");
+    std::lock_guard<std::mutex> guard(services_lock_);
+    RCLCPP_DEBUG(get_logger(), "list hardware interfaces service locked");
 
-  RCLCPP_DEBUG(get_logger(), "list hardware interfaces service finished");
+    auto state_interface_names = resource_manager_->state_interface_keys();
+    for (const auto & state_interface_name : state_interface_names)
+    {
+      try
+      {
+        controller_manager_msgs::msg::HardwareInterface hwi;
+        hwi.name = state_interface_name;
+        hwi.is_available = resource_manager_->state_interface_is_available(state_interface_name);
+        hwi.data_type = resource_manager_->get_state_interface_data_type(state_interface_name);
+        hwi.is_claimed = false;
+        response->state_interfaces.push_back(hwi);
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_WARN(
+          get_logger(), "Failed to get state interface '%s': %s", state_interface_name.c_str(),
+          e.what());
+      }
+    }
+
+    auto command_interface_names = resource_manager_->command_interface_keys();
+    for (const auto & command_interface_name : command_interface_names)
+    {
+      try
+      {
+        controller_manager_msgs::msg::HardwareInterface hwi;
+        hwi.name = command_interface_name;
+        hwi.is_available =
+          resource_manager_->command_interface_is_available(command_interface_name);
+        hwi.is_claimed = resource_manager_->command_interface_is_claimed(command_interface_name);
+        hwi.data_type = resource_manager_->get_command_interface_data_type(command_interface_name);
+        response->command_interfaces.push_back(hwi);
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_WARN(
+          get_logger(), "Failed to get command interface '%s': %s", command_interface_name.c_str(),
+          e.what());
+      }
+    }
+
+    RCLCPP_DEBUG(get_logger(), "list hardware interfaces service finished");
+  }
+  catch (const std::exception & e)
+  {
+    RCLCPP_ERROR(get_logger(), "list_hardware_interfaces_srv_cb failed: %s", e.what());
+  }
+  catch (...)
+  {
+    RCLCPP_ERROR(get_logger(), "list_hardware_interfaces_srv_cb failed due to unknown exception");
+  }
 }
 
 void ControllerManager::set_hardware_component_state_srv_cb(
@@ -3522,11 +3795,25 @@ void ControllerManager::propagate_deactivation_of_chained_mode(
           "The controller will be removed from the list later."
           "Skipping adding following controllers to 'from' chained mode request.",
           controller.info.name.c_str());
-        break;
+        continue;  // skip this controller
       }
 
-      const auto ctrl_cmd_itf_names = controller.c->command_interface_configuration().names;
-      const auto ctrl_state_itf_names = controller.c->state_interface_configuration().names;
+      std::vector<std::string> ctrl_cmd_itf_names;
+      std::vector<std::string> ctrl_state_itf_names;
+
+      try
+      {
+        ctrl_cmd_itf_names = controller.c->command_interface_configuration().names;
+        ctrl_state_itf_names = controller.c->state_interface_configuration().names;
+      }
+      catch (const std::exception & e)
+      {
+        RCLCPP_ERROR(
+          get_logger(), "Cannot get interface configuration for controller '%s': %s",
+          controller.info.name.c_str(), e.what());
+        continue;
+      }
+
       auto ctrl_itf_names = ctrl_cmd_itf_names;
       ctrl_itf_names.insert(
         ctrl_itf_names.end(), ctrl_state_itf_names.begin(), ctrl_state_itf_names.end());
@@ -3564,8 +3851,34 @@ controller_interface::return_type ControllerManager::check_following_controllers
     get_logger(), "Checking following controllers of preceding controller with name '%s'.",
     controller_it->info.name.c_str());
 
-  const auto controller_cmd_interfaces = controller_it->c->command_interface_configuration().names;
-  const auto controller_state_interfaces = controller_it->c->state_interface_configuration().names;
+  std::vector<std::string> controller_cmd_interfaces;
+  try
+  {
+    controller_cmd_interfaces = controller_it->c->command_interface_configuration().names;
+  }
+  catch (const std::exception & e)
+  {
+    message = fmt::format(
+      FMT_COMPILE(
+        "Exception while accessing command_interface_configuration() of controller '{}': {}"),
+      controller_it->info.name, e.what());
+    RCLCPP_WARN(get_logger(), "%s", message.c_str());
+    return controller_interface::return_type::ERROR;
+  }
+  std::vector<std::string> controller_state_interfaces;
+  try
+  {
+    controller_state_interfaces = controller_it->c->state_interface_configuration().names;
+  }
+  catch (const std::exception & e)
+  {
+    message = fmt::format(
+      FMT_COMPILE(
+        "Exception while accessing state_interface_configuration() of controller '{}': {}"),
+      controller_it->info.name, e.what());
+    RCLCPP_WARN(get_logger(), "%s", message.c_str());
+    return controller_interface::return_type::ERROR;
+  }
   // get all interfaces of the controller
   auto controller_interfaces = controller_cmd_interfaces;
   controller_interfaces.insert(
@@ -3781,160 +4094,182 @@ ControllerManager::check_fallback_controllers_state_pre_activation(
   const std::vector<ControllerSpec> & controllers, const ControllersListIterator controller_it,
   std::string & message)
 {
-  for (const auto & fb_ctrl : controller_it->info.fallback_controllers_names)
+  try
   {
-    auto fb_ctrl_it = std::find_if(
-      controllers.begin(), controllers.end(),
-      std::bind(controller_name_compare, std::placeholders::_1, fb_ctrl));
-    if (fb_ctrl_it == controllers.end())
+    for (const auto & fb_ctrl : controller_it->info.fallback_controllers_names)
     {
-      message = fmt::format(
-        FMT_COMPILE(
-          "Unable to find the fallback controller : '{}' of the controller : '{}' within the "
-          "controller list"),
-        fb_ctrl, controller_it->info.name);
-      RCLCPP_ERROR(get_logger(), "%s", message.c_str());
-      return controller_interface::return_type::ERROR;
-    }
-    else
-    {
-      if (!(is_controller_inactive(fb_ctrl_it->c) || is_controller_active(fb_ctrl_it->c)))
+      auto fb_ctrl_it = std::find_if(
+        controllers.begin(), controllers.end(),
+        std::bind(controller_name_compare, std::placeholders::_1, fb_ctrl));
+      if (fb_ctrl_it == controllers.end())
       {
         message = fmt::format(
           FMT_COMPILE(
-            "Controller with name '{}' cannot be activated, as its fallback controller : '{}' need "
-            "to be configured and be in inactive/active state!"),
-          controller_it->info.name, fb_ctrl);
+            "Unable to find the fallback controller : '{}' of the controller : '{}' within the "
+            "controller list"),
+          fb_ctrl, controller_it->info.name);
         RCLCPP_ERROR(get_logger(), "%s", message.c_str());
         return controller_interface::return_type::ERROR;
       }
-      for (const auto & fb_cmd_itf : fb_ctrl_it->c->command_interface_configuration().names)
+      else
       {
-        if (!resource_manager_->command_interface_is_available(fb_cmd_itf))
+        if (!(is_controller_inactive(fb_ctrl_it->c) || is_controller_active(fb_ctrl_it->c)))
         {
-          ControllersListIterator following_ctrl_it;
-          if (is_interface_a_chained_interface(fb_cmd_itf, controllers, following_ctrl_it))
+          message = fmt::format(
+            FMT_COMPILE(
+              "Controller with name '{}' cannot be activated, as its fallback controller : '{}' "
+              "need "
+              "to be configured and be in inactive/active state!"),
+            controller_it->info.name, fb_ctrl);
+          RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+          return controller_interface::return_type::ERROR;
+        }
+        for (const auto & fb_cmd_itf : fb_ctrl_it->c->command_interface_configuration().names)
+        {
+          if (!resource_manager_->command_interface_is_available(fb_cmd_itf))
           {
-            // if following_ctrl_it is inactive and it is in the fallback list of the
-            // controller_it and then check it it's exported reference interface names list if
-            // it's available
-            if (is_controller_inactive(following_ctrl_it->c))
+            ControllersListIterator following_ctrl_it;
+            if (is_interface_a_chained_interface(fb_cmd_itf, controllers, following_ctrl_it))
             {
-              if (
-                std::find(
-                  controller_it->info.fallback_controllers_names.begin(),
-                  controller_it->info.fallback_controllers_names.end(),
-                  following_ctrl_it->info.name) !=
-                controller_it->info.fallback_controllers_names.end())
+              // if following_ctrl_it is inactive and it is in the fallback list of the
+              // controller_it and then check it it's exported reference interface names list if
+              // it's available
+              if (is_controller_inactive(following_ctrl_it->c))
               {
-                const auto exported_ref_itfs =
-                  resource_manager_->get_controller_reference_interface_names(
-                    following_ctrl_it->info.name);
                 if (
-                  std::find(exported_ref_itfs.begin(), exported_ref_itfs.end(), fb_cmd_itf) ==
-                  exported_ref_itfs.end())
+                  std::find(
+                    controller_it->info.fallback_controllers_names.begin(),
+                    controller_it->info.fallback_controllers_names.end(),
+                    following_ctrl_it->info.name) !=
+                  controller_it->info.fallback_controllers_names.end())
+                {
+                  const auto exported_ref_itfs =
+                    resource_manager_->get_controller_reference_interface_names(
+                      following_ctrl_it->info.name);
+                  if (
+                    std::find(exported_ref_itfs.begin(), exported_ref_itfs.end(), fb_cmd_itf) ==
+                    exported_ref_itfs.end())
+                  {
+                    message = fmt::format(
+                      FMT_COMPILE(
+                        "Controller with name '{}' cannot be activated, as the command interface : "
+                        "'{}' required by its fallback controller : '{}' is not exported by the "
+                        "controller : '{}' in the current fallback list!"),
+                      controller_it->info.name, fb_cmd_itf, fb_ctrl, following_ctrl_it->info.name);
+                    RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+                    return controller_interface::return_type::ERROR;
+                  }
+                }
+                else
                 {
                   message = fmt::format(
                     FMT_COMPILE(
                       "Controller with name '{}' cannot be activated, as the command interface : "
-                      "'{}' required by its fallback controller : '{}' is not exported by the "
-                      "controller : '{}' in the current fallback list!"),
+                      "'{}' required by its fallback controller : '{}' is not available as the "
+                      "controller is not in active state!. May be consider adding this controller "
+                      "to "
+                      "the fallback list of the controller : '{}' or already have it activated."),
                     controller_it->info.name, fb_cmd_itf, fb_ctrl, following_ctrl_it->info.name);
                   RCLCPP_ERROR(get_logger(), "%s", message.c_str());
                   return controller_interface::return_type::ERROR;
                 }
               }
-              else
-              {
-                message = fmt::format(
-                  FMT_COMPILE(
-                    "Controller with name '{}' cannot be activated, as the command interface : "
-                    "'{}' required by its fallback controller : '{}' is not available as the "
-                    "controller is not in active state!. May be consider adding this controller to "
-                    "the fallback list of the controller : '{}' or already have it activated."),
-                  controller_it->info.name, fb_cmd_itf, fb_ctrl, following_ctrl_it->info.name);
-                RCLCPP_ERROR(get_logger(), "%s", message.c_str());
-                return controller_interface::return_type::ERROR;
-              }
+            }
+            else
+            {
+              message = fmt::format(
+                FMT_COMPILE(
+                  "Controller with name '{}' cannot be activated, as not all of its fallback "
+                  "controller's : '{}' command interfaces are currently available!"),
+                controller_it->info.name, fb_ctrl);
+              RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+              return controller_interface::return_type::ERROR;
             }
           }
-          else
-          {
-            message = fmt::format(
-              FMT_COMPILE(
-                "Controller with name '{}' cannot be activated, as not all of its fallback "
-                "controller's : '{}' command interfaces are currently available!"),
-              controller_it->info.name, fb_ctrl);
-            RCLCPP_ERROR(get_logger(), "%s", message.c_str());
-            return controller_interface::return_type::ERROR;
-          }
         }
-      }
-      for (const auto & fb_state_itf : fb_ctrl_it->c->state_interface_configuration().names)
-      {
-        if (!resource_manager_->state_interface_is_available(fb_state_itf))
+        for (const auto & fb_state_itf : fb_ctrl_it->c->state_interface_configuration().names)
         {
-          ControllersListIterator following_ctrl_it;
-          if (is_interface_a_chained_interface(fb_state_itf, controllers, following_ctrl_it))
+          if (!resource_manager_->state_interface_is_available(fb_state_itf))
           {
-            // if following_ctrl_it is inactive and it is in the fallback list of the
-            // controller_it and then check it it's exported reference interface names list if
-            // it's available
-            if (is_controller_inactive(following_ctrl_it->c))
+            ControllersListIterator following_ctrl_it;
+            if (is_interface_a_chained_interface(fb_state_itf, controllers, following_ctrl_it))
             {
-              if (
-                std::find(
-                  controller_it->info.fallback_controllers_names.begin(),
-                  controller_it->info.fallback_controllers_names.end(),
-                  following_ctrl_it->info.name) !=
-                controller_it->info.fallback_controllers_names.end())
+              // if following_ctrl_it is inactive and it is in the fallback list of the
+              // controller_it and then check it it's exported reference interface names list if
+              // it's available
+              if (is_controller_inactive(following_ctrl_it->c))
               {
-                const auto exported_state_itfs =
-                  resource_manager_->get_controller_exported_state_interface_names(
-                    following_ctrl_it->info.name);
                 if (
-                  std::find(exported_state_itfs.begin(), exported_state_itfs.end(), fb_state_itf) ==
-                  exported_state_itfs.end())
+                  std::find(
+                    controller_it->info.fallback_controllers_names.begin(),
+                    controller_it->info.fallback_controllers_names.end(),
+                    following_ctrl_it->info.name) !=
+                  controller_it->info.fallback_controllers_names.end())
+                {
+                  const auto exported_state_itfs =
+                    resource_manager_->get_controller_exported_state_interface_names(
+                      following_ctrl_it->info.name);
+                  if (
+                    std::find(
+                      exported_state_itfs.begin(), exported_state_itfs.end(), fb_state_itf) ==
+                    exported_state_itfs.end())
+                  {
+                    message = fmt::format(
+                      FMT_COMPILE(
+                        "Controller with name '{}' cannot be activated, as the state interface : "
+                        "'{}' required by its fallback controller : '{}' is not exported by the "
+                        "controller : '{}' in the current fallback list!"),
+                      controller_it->info.name, fb_state_itf, fb_ctrl,
+                      following_ctrl_it->info.name);
+                    RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+                    return controller_interface::return_type::ERROR;
+                  }
+                }
+                else
                 {
                   message = fmt::format(
                     FMT_COMPILE(
                       "Controller with name '{}' cannot be activated, as the state interface : "
-                      "'{}' required by its fallback controller : '{}' is not exported by the "
-                      "controller : '{}' in the current fallback list!"),
+                      "'{}' "
+                      "required by its fallback controller : '{}' is not available as the "
+                      "controller is not in active state!. May be consider adding this controller "
+                      "to "
+                      "the fallback list of the controller : '{}' or already have it activated."),
                     controller_it->info.name, fb_state_itf, fb_ctrl, following_ctrl_it->info.name);
                   RCLCPP_ERROR(get_logger(), "%s", message.c_str());
                   return controller_interface::return_type::ERROR;
                 }
               }
-              else
-              {
-                message = fmt::format(
-                  FMT_COMPILE(
-                    "Controller with name '{}' cannot be activated, as the state interface : '{}' "
-                    "required by its fallback controller : '{}' is not available as the "
-                    "controller is not in active state!. May be consider adding this controller to "
-                    "the fallback list of the controller : '{}' or already have it activated."),
-                  controller_it->info.name, fb_state_itf, fb_ctrl, following_ctrl_it->info.name);
-                RCLCPP_ERROR(get_logger(), "%s", message.c_str());
-                return controller_interface::return_type::ERROR;
-              }
             }
-          }
-          else
-          {
-            message = fmt::format(
-              FMT_COMPILE(
-                "Controller with name '{}' cannot be activated, as not all of its fallback "
-                "controller's : '{}' state interfaces are currently available!"),
-              controller_it->info.name, fb_ctrl);
-            RCLCPP_ERROR(get_logger(), "%s", message.c_str());
-            return controller_interface::return_type::ERROR;
+            else
+            {
+              message = fmt::format(
+                FMT_COMPILE(
+                  "Controller with name '{}' cannot be activated, as not all of its fallback "
+                  "controller's : '{}' state interfaces are currently available!"),
+                controller_it->info.name, fb_ctrl);
+              RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+              return controller_interface::return_type::ERROR;
+            }
           }
         }
       }
     }
+    return controller_interface::return_type::OK;
   }
-  return controller_interface::return_type::OK;
+  catch (const std::exception & e)
+  {
+    RCLCPP_ERROR(
+      get_logger(), "Exception caught in check_fallback_controllers_state_pre_activation: %s",
+      e.what());
+    return controller_interface::return_type::ERROR;
+  }
+  catch (...)
+  {
+    RCLCPP_ERROR(
+      get_logger(), "Unknown exception caught in check_fallback_controllers_state_pre_activation");
+    return controller_interface::return_type::ERROR;
+  }
 }
 
 void ControllerManager::publish_activity()
@@ -3988,8 +4323,22 @@ controller_interface::return_type ControllerManager::check_for_interfaces_availa
       RCLCPP_ERROR(get_logger(), "%s", message.c_str());
       return controller_interface::return_type::ERROR;
     }
-    const auto controller_cmd_interfaces =
-      controller_it->c->command_interface_configuration().names;
+
+    std::vector<std::string> controller_cmd_interfaces;
+
+    try
+    {
+      controller_cmd_interfaces = controller_it->c->command_interface_configuration().names;
+    }
+    catch (const std::exception & e)
+    {
+      message = fmt::format(
+        FMT_COMPILE("Cannot get command interface configuration for controller '{}': {}"),
+        controller_it->info.name, e.what());
+      RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+      return controller_interface::return_type::ERROR;
+    }
+
     for (const auto & cmd_itf : controller_cmd_interfaces)
     {
       future_available_cmd_interfaces.push_back(cmd_itf);
@@ -4013,10 +4362,23 @@ controller_interface::return_type ControllerManager::check_for_interfaces_availa
       RCLCPP_ERROR(get_logger(), "%s", message.c_str());
       return controller_interface::return_type::ERROR;
     }
-    const auto controller_cmd_interfaces =
-      controller_it->c->command_interface_configuration().names;
-    const auto controller_state_interfaces =
-      controller_it->c->state_interface_configuration().names;
+
+    std::vector<std::string> controller_cmd_interfaces;
+    std::vector<std::string> controller_state_interfaces;
+
+    try
+    {
+      controller_cmd_interfaces = controller_it->c->command_interface_configuration().names;
+      controller_state_interfaces = controller_it->c->state_interface_configuration().names;
+    }
+    catch (const std::exception & e)
+    {
+      message = fmt::format(
+        FMT_COMPILE("Cannot get interface configuration for controller '{}': {}"),
+        controller_it->info.name, e.what());
+      RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+      return controller_interface::return_type::ERROR;
+    }
 
     // check if the interfaces are available in the first place
     for (const auto & cmd_itf : controller_cmd_interfaces)
@@ -4568,8 +4930,32 @@ void ControllerManager::build_controllers_topology_info(
         controller.info.name.c_str());
       continue;
     }
-    const auto cmd_itfs = controller.c->command_interface_configuration().names;
-    const auto state_itfs = controller.c->state_interface_configuration().names;
+
+    std::vector<std::string> cmd_itfs;
+    std::vector<std::string> state_itfs;
+
+    try
+    {
+      cmd_itfs = controller.c->command_interface_configuration().names;
+    }
+    catch (const std::exception & e)
+    {
+      RCLCPP_ERROR(
+        get_logger(), "Cannot get command interface configuration for controller '%s': %s",
+        controller.info.name.c_str(), e.what());
+      continue;
+    }
+    try
+    {
+      state_itfs = controller.c->state_interface_configuration().names;
+    }
+    catch (const std::exception & e)
+    {
+      RCLCPP_ERROR(
+        get_logger(), "Cannot get state interface configuration for controller '%s': %s",
+        controller.info.name.c_str(), e.what());
+      continue;
+    }
 
     for (const auto & cmd_itf : cmd_itfs)
     {
