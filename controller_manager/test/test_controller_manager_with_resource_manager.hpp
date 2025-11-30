@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #include <utility>
 #include "controller_interface/controller_interface.hpp"
@@ -55,6 +56,10 @@ public:
     std::shared_ptr<controller_manager_msgs::srv::ListHardwareComponents::Response> res)
   {
     list_hardware_components_srv_cb(req, res);
+  }
+  void set_mock_resource_manager(hardware_interface::ResourceManager * rm)
+  {
+    resource_manager_.reset(rm);
   }
 };
 
@@ -126,31 +131,30 @@ public:
 
   // Return a fake component with "nonexistent" interfaces
   const std::unordered_map<std::string, hardware_interface::HardwareComponentInfo> &
-  get_components_status() const
+  get_components_status() override
   {
     _mock_components.clear();
 
     hardware_interface::HardwareComponentInfo comp;
     comp.state_interfaces.push_back("nonexistent_joint/velocity");
     comp.command_interfaces.push_back("nonexistent_joint/position");
-    RCLCPP_ERROR(get_logger(), "here");
 
     _mock_components["dummy_component"] = comp;
     return _mock_components;
   }
 
   // Override availability to always return false
-  bool state_interface_is_available(const std::string &) const { return false; }
+  bool state_interface_is_available(const std::string & name) const override { return false; }
 
-  bool command_interface_is_available(const std::string &) const { return false; }
+  bool command_interface_is_available(const std::string & name) const override { return false; }
 
   // Override data type accessors to throw errors
-  std::string get_state_interface_data_type(const std::string &) const
+  std::string get_state_interface_data_type(const std::string & name) const override
   {
     throw std::runtime_error("State interface error");
   }
 
-  std::string get_command_interface_data_type(const std::string &) const
+  std::string get_command_interface_data_type(const std::string & name) const override
   {
     throw std::runtime_error("Command interface error");
   }

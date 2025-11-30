@@ -159,10 +159,9 @@ TEST_F(ControllerManagerTest, check_list_controller_with_missing_interface_does_
 
 TEST_F(ControllerManagerTest, list_hardware_components_with_data_type_errors_does_not_throw)
 {
-  auto mock_rm =
-    std::make_unique<MockResourceManagerWithErrors>(node_->get_clock(), rclcpp::get_logger("test"));
-
-  TestControllerManager cm(std::move(mock_rm), executor_);
+  auto mock_rm = new MockResourceManagerWithErrors(node_->get_clock(), rclcpp::get_logger("test"));
+  TestControllerManager cm(executor_);
+  cm.set_mock_resource_manager(mock_rm);
 
   auto req = std::make_shared<controller_manager_msgs::srv::ListHardwareComponents::Request>();
   auto res = std::make_shared<controller_manager_msgs::srv::ListHardwareComponents::Response>();
