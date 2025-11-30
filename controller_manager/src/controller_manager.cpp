@@ -1020,6 +1020,7 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::load_c
       get_logger(),
       "Caught exception of type : %s while loading the controller '%s' of plugin type '%s':\n%s",
       typeid(e).name(), controller_name.c_str(), controller_type.c_str(), e.what());
+    params_->handle_exceptions ? void() : throw;
     return nullptr;
   }
   catch (...)
@@ -1230,6 +1231,7 @@ controller_interface::return_type ControllerManager::cleanup_controller(
     RCLCPP_ERROR(
       get_logger(), "Caught exception while cleaning-up the controller '%s'",
       controller.info.name.c_str());
+    params_->handle_exceptions ? void() : throw;
     return controller_interface::return_type::ERROR;
   }
   return controller_interface::return_type::OK;
@@ -1254,12 +1256,14 @@ void ControllerManager::shutdown_controller(
       get_logger(),
       "Caught exception of type : %s while shutdown the controller '%s' before unloading: %s",
       typeid(e).name(), controller.info.name.c_str(), e.what());
+    params_->handle_exceptions ? void() : throw;
   }
   catch (...)
   {
     RCLCPP_ERROR(
       get_logger(), "Failed to shutdown the controller '%s' before unloading",
       controller.info.name.c_str());
+    params_->handle_exceptions ? void() : throw;
   }
 }
 
@@ -1330,6 +1334,7 @@ controller_interface::return_type ControllerManager::configure_controller(
     RCLCPP_ERROR(
       get_logger(), "Caught exception of type : %s while configuring controller '%s': %s",
       typeid(e).name(), controller_name.c_str(), e.what());
+    params_->handle_exceptions ? void() : throw;
     return controller_interface::return_type::ERROR;
   }
   catch (...)
@@ -1337,6 +1342,7 @@ controller_interface::return_type ControllerManager::configure_controller(
     RCLCPP_ERROR(
       get_logger(), "Caught unknown exception while configuring controller '%s'",
       controller_name.c_str());
+    params_->handle_exceptions ? void() : throw;
     return controller_interface::return_type::ERROR;
   }
 
@@ -1391,6 +1397,7 @@ controller_interface::return_type ControllerManager::configure_controller(
       RCLCPP_FATAL(
         get_logger(), "Export of the state or reference interfaces failed with following error: %s",
         e.what());
+      params_->handle_exceptions ? void() : throw;
       return controller_interface::return_type::ERROR;
     }
     resource_manager_->import_controller_reference_interfaces(controller_name, ref_interfaces);
@@ -2157,6 +2164,7 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::add_co
     controller_params.controller_name = controller.info.name;
     controller_params.robot_description = robot_description_;
     controller_params.update_rate = get_update_rate();
+    controller_params.controller_manager_update_rate = get_update_rate();
     controller_params.node_namespace = get_namespace();
     controller_params.node_options = controller_node_options;
     controller_params.hard_joint_limits = resource_manager_->get_hard_joint_limits();
@@ -2176,6 +2184,7 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::add_co
     RCLCPP_ERROR(
       get_logger(), "Caught exception of type : %s while initializing controller '%s': %s",
       typeid(e).name(), controller.info.name.c_str(), e.what());
+    params_->handle_exceptions ? void() : throw;
     return nullptr;
   }
   catch (...)
@@ -2184,6 +2193,7 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::add_co
     RCLCPP_ERROR(
       get_logger(), "Caught unknown exception while initializing controller '%s'",
       controller.info.name.c_str());
+    params_->handle_exceptions ? void() : throw;
     return nullptr;
   }
 
@@ -2253,6 +2263,7 @@ void ControllerManager::deactivate_controllers(
         RCLCPP_ERROR(
           get_logger(), "Caught exception of type : %s while deactivating the  controller '%s': %s",
           typeid(e).name(), controller_name.c_str(), e.what());
+        params_->handle_exceptions ? void() : throw;
         continue;
       }
       catch (...)
@@ -2260,6 +2271,7 @@ void ControllerManager::deactivate_controllers(
         RCLCPP_ERROR(
           get_logger(), "Caught unknown exception while deactivating the controller '%s'",
           controller_name.c_str());
+        params_->handle_exceptions ? void() : throw;
         continue;
       }
     }
@@ -2376,6 +2388,7 @@ void ControllerManager::activate_controllers(
           "Caught exception of type : %s while claiming the command interfaces. Can't activate "
           "controller '%s': %s",
           typeid(e).name(), controller_name.c_str(), e.what());
+        params_->handle_exceptions ? void() : throw;
         command_loans.clear();
         assignment_successful = false;
         break;
@@ -2417,6 +2430,7 @@ void ControllerManager::activate_controllers(
           "controller '%s': %s",
           typeid(e).name(), controller_name.c_str(), e.what());
         assignment_successful = false;
+        params_->handle_exceptions ? void() : throw;
         break;
       }
     }
@@ -2440,12 +2454,14 @@ void ControllerManager::activate_controllers(
       RCLCPP_ERROR(
         get_logger(), "Caught exception of type : %s while activating the controller '%s': %s",
         typeid(e).name(), controller_name.c_str(), e.what());
+      params_->handle_exceptions ? void() : throw;
     }
     catch (...)
     {
       RCLCPP_ERROR(
         get_logger(), "Caught unknown exception while activating the controller '%s'",
         controller_name.c_str());
+      params_->handle_exceptions ? void() : throw;
     }
     if (new_state.id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
     {
@@ -3007,6 +3023,8 @@ void ControllerManager::manage_switch()
   {
     RCLCPP_ERROR(get_logger(), "Error while performing mode switch.");
     // If the hardware switching fails, there is no point in continuing to switch controllers
+    switch_params_.do_switch = false;
+    switch_params_.cv.notify_all();
     return;
   }
   execution_time_.switch_perform_mode_time =
@@ -3168,6 +3186,7 @@ controller_interface::return_type ControllerManager::update(
           RCLCPP_ERROR(
             get_logger(), "Caught exception of type : %s while updating controller '%s': %s",
             typeid(e).name(), loaded_controller.info.name.c_str(), e.what());
+          params_->handle_exceptions ? void() : throw;
           controller_ret = controller_interface::return_type::ERROR;
         }
         catch (...)
@@ -3175,6 +3194,7 @@ controller_interface::return_type ControllerManager::update(
           RCLCPP_ERROR(
             get_logger(), "Caught unknown exception while updating controller '%s'",
             loaded_controller.info.name.c_str());
+          params_->handle_exceptions ? void() : throw;
           controller_ret = controller_interface::return_type::ERROR;
         }
 
@@ -3261,7 +3281,6 @@ controller_interface::return_type ControllerManager::update(
   }
 
   PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::DEFAULT_REGISTRY_KEY);
-  PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::CM_STATISTICS_KEY);
 
   execution_time_.update_time =
     std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start_time)
@@ -3363,8 +3382,7 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
         "Overrun might occur, Total time : %.3f us (Expected < %.3f us) --> Read time : %.3f us, "
         "Update time : %.3f us (Switch time : %.3f us (Switch chained mode time : %.3f us, perform "
         "mode change time : %.3f us, Activation time : %.3f us, Deactivation time : %.3f us)), "
-        "Write "
-        "time : %.3f us",
+        "Write time : %.3f us",
         execution_time_.total_time, expected_cycle_time, execution_time_.read_time,
         execution_time_.update_time, execution_time_.switch_time,
         execution_time_.switch_chained_mode_time, execution_time_.switch_perform_mode_time,
@@ -3381,6 +3399,8 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
         execution_time_.update_time, execution_time_.write_time);
     }
   }
+
+  PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::CM_STATISTICS_KEY);
 }
 
 std::vector<ControllerSpec> &
@@ -3988,8 +4008,11 @@ controller_interface::return_type ControllerManager::check_for_interfaces_availa
       RCLCPP_ERROR(get_logger(), "%s", message.c_str());
       return controller_interface::return_type::ERROR;
     }
+    const auto cmd_itf_cfg = controller_it->c->command_interface_configuration();
     const auto controller_cmd_interfaces =
-      controller_it->c->command_interface_configuration().names;
+      (cmd_itf_cfg.type == controller_interface::interface_configuration_type::INDIVIDUAL)
+        ? cmd_itf_cfg.names
+        : controller_it->info.claimed_interfaces;
     for (const auto & cmd_itf : controller_cmd_interfaces)
     {
       future_available_cmd_interfaces.push_back(cmd_itf);
