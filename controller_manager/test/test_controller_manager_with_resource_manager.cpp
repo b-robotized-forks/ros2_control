@@ -131,7 +131,7 @@ TEST_F(ControllerManagerTest, init_controller_manager_with_invalid_urdf)
   EXPECT_TRUE(cm.has_valid_robot_description());
 }
 
-TEST_F(ControllerManagerTest, check_list_controller_with_missing_interface_does_not_throw)
+TEST_F(ControllerManagerTest, list_controller_with_missing_interface_does_not_throw)
 {
   TestControllerManager cm(std::move(test_resource_manager_), executor_);
 
@@ -157,7 +157,7 @@ TEST_F(ControllerManagerTest, check_list_controller_with_missing_interface_does_
   EXPECT_EQ(res->controller[0].name, "dummy_controller");
 }
 
-TEST_F(ControllerManagerTest, list_hardware_components_with_data_type_errors_does_not_throw)
+TEST_F(ControllerManagerTest, list_hardware_components_does_not_throw)
 {
   auto mock_rm = new MockResourceManagerWithErrors(node_->get_clock(), rclcpp::get_logger("test"));
   TestControllerManager cm(executor_);
@@ -171,6 +171,34 @@ TEST_F(ControllerManagerTest, list_hardware_components_with_data_type_errors_doe
 
   const auto & component = res->component[0];
   EXPECT_EQ(component.name, "dummy_component");
+}
+TEST_F(ControllerManagerTest, activate_controllers_does_not_throw)
+{
+  auto mock_rm = new MockResourceManagerWithErrors(node_->get_clock(), rclcpp::get_logger("test"));
+
+  TestControllerManager cm(executor_);
+  cm.set_mock_resource_manager(mock_rm);
+
+  auto dummy = std::make_shared<DummyController>();
+
+  controller_manager::ControllerSpec spec;
+  spec.c = dummy;
+  spec.info.name = "dummy_controller";
+  spec.info.type = "DummyController";
+
+  cm.add_controller(spec);
+
+  auto ret = cm.configure_controller("dummy_controller");
+  EXPECT_EQ(ret, controller_interface::return_type::OK);
+
+  std::vector<controller_manager::ControllerSpec> rt_list;
+  rt_list.push_back(spec);
+
+  std::vector<std::string> to_activate = {"dummy_controller"};
+
+  // Call should NOT throw even if interfaces are missing or RM fails
+  EXPECT_NO_THROW(cm.activate_controllers_public(
+    rt_list, to_activate, controller_manager_msgs::srv::SwitchController::Request::STRICT));
 }
 
 int main(int argc, char ** argv)

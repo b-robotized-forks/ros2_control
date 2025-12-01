@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <utility>
 #include "controller_interface/controller_interface.hpp"
@@ -60,6 +61,12 @@ public:
   void set_mock_resource_manager(hardware_interface::ResourceManager * rm)
   {
     resource_manager_.reset(rm);
+  }
+  void activate_controllers_public(
+    const std::vector<controller_manager::ControllerSpec> & rt_controller_list,
+    const std::vector<std::string> & controllers_to_activate, int strictness)
+  {
+    this->activate_controllers(rt_controller_list, controllers_to_activate, strictness);
   }
 };
 
