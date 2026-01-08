@@ -70,15 +70,17 @@ int main(int argc, char ** argv)
       RCLCPP_WARN(cm->get_logger(), "Unable to lock the memory: '%s'", lock_result.second.c_str());
     }
   }
-
-  RCLCPP_INFO(cm->get_logger(), "update rate is %d Hz", cm->get_update_rate());
-  const bool slave_mode = cm->get_parameter_or("slave_mode", true);
-  RCLCPP_INFO(cm->get_logger(), "Slave mode: %s. Controller Manager relies on robot blocking read() to synchronize the update loop.", slave_mode ? "enabled " : "disabled");
-
+  
+  const bool slave_mode = cm->get_parameter_or("slave_mode", false);
   const bool manage_overruns = cm->get_parameter_or<bool>("overruns.manage", true);
+
   if (!slave_mode) {
+    RCLCPP_INFO(cm->get_logger(), "update rate is %d Hz", cm->get_update_rate());
     RCLCPP_INFO(
         cm->get_logger(), "Overruns handling is : %s", manage_overruns ? "enabled" : "disabled");
+  } else {
+    RCLCPP_INFO(
+        cm->get_logger(), "SLAVE mode ENABLED. Controller Manager relies on robot blocking read() to synchronize the update loop.");
   }
   const int thread_priority = cm->get_parameter_or<int>("thread_priority", kSchedPriority);
   RCLCPP_INFO(

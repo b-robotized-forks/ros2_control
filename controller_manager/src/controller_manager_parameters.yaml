@@ -263,3 +263,7 @@ controller_manager:
       type: bool,
       description: "If true, the controller manager will print a warning message to the console if an overrun is detected in its real-time loop (``read``, ``update`` and ``write``). By default, it is set to true, except when used with ``use_sim_time`` parameter set to true.",
     }
+  slave_mode: {
+      type: bool,
+      description: "If true, the controller manager will schedule its own update loop, targeting the ``update_rate``. It will rely on blocking ``read()`` in a hardware interface to provide this scheduling. By default it is set to false.",
+    }
