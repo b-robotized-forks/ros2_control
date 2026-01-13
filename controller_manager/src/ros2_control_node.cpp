@@ -71,7 +71,7 @@ int main(int argc, char ** argv)
     }
   }
   
-  const bool slave_mode = cm->get_parameter_or("slave_mode", false);
+  const bool slave_mode = cm->get_parameter_or<bool>("slave_mode", false);
   const bool manage_overruns = cm->get_parameter_or<bool>("overruns.manage", true);
 
   if (!slave_mode) {

@@ -265,5 +265,6 @@ controller_manager:
     }
   slave_mode: {
       type: bool,
+      default_value: false,
       description: "If true, the controller manager will schedule its own update loop, targeting the ``update_rate``. It will rely on blocking ``read()`` in a hardware interface to provide this scheduling. By default it is set to false.",
     }
