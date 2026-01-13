@@ -3424,6 +3424,10 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
       .count();
   execution_time_.total_time =
     execution_time_.write_time + execution_time_.update_time + execution_time_.read_time;
+
+  PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::CM_STATISTICS_KEY);
+  if(params_->slave_mode) return;
+  
   const double expected_cycle_time = 1.e6 / static_cast<double>(get_update_rate());
   if (params_->overruns.print_warnings && execution_time_.total_time > expected_cycle_time)
   {
@@ -3451,8 +3455,6 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
         execution_time_.update_time, execution_time_.write_time);
     }
   }
-
-  PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::CM_STATISTICS_KEY);
 }
 
 std::vector<ControllerSpec> &
