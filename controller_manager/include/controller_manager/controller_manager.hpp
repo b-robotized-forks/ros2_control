@@ -135,22 +135,19 @@ public:
     std::shared_ptr<rclcpp::Executor> executor,
     const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options(),
-    const std::string & runtime_config_prefix_path = "");
+    const rclcpp::NodeOptions & options = get_cm_node_options());
 
   ControllerManager(
     std::shared_ptr<rclcpp::Executor> executor,
     const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options(),
-    const std::string & runtime_config_prefix_path = "");
+    const rclcpp::NodeOptions & options = get_cm_node_options());
 
   ControllerManager(
     std::shared_ptr<rclcpp::Executor> executor, const std::string & urdf,
     bool activate_all_hw_components, const std::string & manager_node_name = "controller_manager",
     const std::string & node_namespace = "",
-    const rclcpp::NodeOptions & options = get_cm_node_options(),
-    const std::string & runtime_config_prefix_path = "");
+    const rclcpp::NodeOptions & options = get_cm_node_options());
 
   virtual ~ControllerManager();
 

@@ -540,6 +540,15 @@ void unregister_controller_manager_statistics(const std::string & name)
 
 namespace controller_manager
 {
+
+inline std::string get_scenario_controllers_path() {
+  const char * snap_common = std::getenv("SNAP_COMMON");
+  if (snap_common) {
+    return (std::filesystem::path(snap_common) / "solutions" / "activeConfiguration" / "b-controlled-box" / "scenario_controllers.yaml").string();
+  }
+  return "";
+}
+
 rclcpp::NodeOptions get_cm_node_options()
 {
   rclcpp::NodeOptions node_options;
@@ -555,18 +564,16 @@ rclcpp::NodeOptions get_cm_node_options()
 
 ControllerManager::ControllerManager(
   std::shared_ptr<rclcpp::Executor> executor, const std::string & manager_node_name,
-  const std::string & node_namespace, const rclcpp::NodeOptions & options,
-  const std::string & runtime_config_prefix_path)
+  const std::string & node_namespace, const rclcpp::NodeOptions & options)
 : ControllerManager(
-    executor, "", false, manager_node_name, node_namespace, options, runtime_config_prefix_path)
+    executor, "", false, manager_node_name, node_namespace, options)
 {
 }
 
 ControllerManager::ControllerManager(
   std::shared_ptr<rclcpp::Executor> executor, const std::string & urdf,
   bool activate_all_hw_components, const std::string & manager_node_name,
-  const std::string & node_namespace, const rclcpp::NodeOptions & options,
-  const std::string & runtime_config_prefix_path)
+  const std::string & node_namespace, const rclcpp::NodeOptions & options)
 : rclcpp::Node(manager_node_name, node_namespace, options),
   diagnostics_updater_(this),
   executor_(executor),
@@ -578,7 +585,7 @@ ControllerManager::ControllerManager(
       kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
   cm_node_options_(options),
   robot_description_(urdf),
-  runtime_config_prefix_path_(runtime_config_prefix_path)
+  runtime_config_prefix_path_(get_scenario_controllers_path())
 {
   // activate_all_hw_components becomes deprecated, as we have the ControllerManagerStateMachine to
   // manage activation states.
@@ -605,8 +612,7 @@ ControllerManager::ControllerManager(
 ControllerManager::ControllerManager(
   std::unique_ptr<hardware_interface::ResourceManager> resource_manager,
   std::shared_ptr<rclcpp::Executor> executor, const std::string & manager_node_name,
-  const std::string & node_namespace, const rclcpp::NodeOptions & options,
-  const std::string & runtime_config_prefix_path)
+  const std::string & node_namespace, const rclcpp::NodeOptions & options)
 : rclcpp::Node(manager_node_name, node_namespace, options),
   resource_manager_(std::move(resource_manager)),
   diagnostics_updater_(this),
@@ -619,7 +625,7 @@ ControllerManager::ControllerManager(
       kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
   cm_node_options_(options),
   robot_description_(resource_manager_->get_robot_description()),
-  runtime_config_prefix_path_(runtime_config_prefix_path)
+  runtime_config_prefix_path_(get_scenario_controllers_path())
 {
   state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
   this->configure();
