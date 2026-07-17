@@ -112,6 +112,7 @@ return_type ControllerInterfaceBase::init(
     auto_declare<bool>("async_parameters.wait_until_initial_trigger", true);
     auto_declare<bool>("async_parameters.print_warnings", true);
     auto_declare<std::string>("async_parameters.slave_to_hardware", "");
+    auto_declare<std::string>("async_parameters.thread_name", "");
 
     impl_->hardware_name_to_sync_ =
       get_node()->get_parameter("async_parameters.slave_to_hardware").as_string();
@@ -286,6 +287,11 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
         "instead.");
     }
     async_params.initialize(impl_->node_, "async_parameters.");
+
+    if (async_params.thread_name.empty()) {
+      async_params.thread_name = get_node()->get_name();
+    }
+
     if (async_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::DETACHED)
     {
       RCLCPP_ERROR(
