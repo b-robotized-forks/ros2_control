@@ -653,6 +653,7 @@ bool ControllerManager::shutdown_controllers()
        lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
     executor_->remove_node(controller.c->get_node()->get_node_base_interface());
   }
+  publish_activity();
   return ctrls_shutdown_status;
 }
 
@@ -3432,6 +3433,7 @@ void ControllerManager::read(const rclcpp::Time & time, const rclcpp::Duration &
       rt_controller_list, {}, rt_buffer_.deactivate_controllers_list, "read");
     deactivate_controllers(rt_controller_list, rt_buffer_.deactivate_controllers_list);
     // TODO(destogl): do auto-start of broadcasters
+    publish_activity();
   }
   execution_time_.read_time =
     std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start_time)
@@ -3770,6 +3772,8 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
       rt_controller_list, {}, rt_buffer_.deactivate_controllers_list, "write");
     deactivate_controllers(rt_controller_list, rt_buffer_.deactivate_controllers_list);
     // TODO(destogl): do auto-start of broadcasters
+
+    publish_activity();
   }
   else if (result == hardware_interface::return_type::DEACTIVATE)
   {
@@ -3815,6 +3819,8 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
     perform_hardware_command_mode_change(
       rt_controller_list, {}, rt_buffer_.deactivate_controllers_list, "write");
     deactivate_controllers(rt_controller_list, rt_buffer_.deactivate_controllers_list);
+
+    publish_activity();
   }
   execution_time_.write_time =
     std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start_time)
