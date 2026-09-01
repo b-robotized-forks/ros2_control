@@ -5564,7 +5564,6 @@ void ControllerManager::teardown()
 
   reset_services();
   reset_robot_description_callback();
-  init_robot_description_callback();
 
   RCLCPP_INFO(get_logger(), "Controller Manager teardown complete.");
 }
@@ -5581,8 +5580,7 @@ previous_state)
   previous_state.label().c_str());
 
   cm_->teardown();
-
-  RCLCPP_INFO(cm_->get_logger(), "Lifecycle: cleanup complete. Transitioning to initial, 'unconfigured' state. Call configure() to restart.");
+  cm_->init_robot_description_callback();
 
   current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
   return LifecycleCallbackReturn::SUCCESS;
