@@ -791,6 +791,16 @@ void ControllerManager::init_robot_description_callback()
   }
 }
 
+void ControllerManager::reset_robot_description_callback()
+{
+  robot_description_subscription_.reset();
+  if (robot_description_notification_timer_)
+  {
+    robot_description_notification_timer_->cancel();
+    robot_description_notification_timer_.reset();
+  }
+}
+
 void ControllerManager::robot_description_callback(const std_msgs::msg::String & robot_description)
 {
   RCLCPP_INFO(get_logger(), "Received robot description from topic.");
@@ -1266,6 +1276,21 @@ void ControllerManager::init_services()
   REGISTER_ENTITY(
     hardware_interface::CM_STATISTICS_KEY, cm_name + ".activation_time",
     &execution_time_.activation_time);
+}
+
+void ControllerManager::reset_services()
+{
+  list_controllers_service_.reset();
+  list_controller_types_service_.reset();
+  load_controller_service_.reset();
+  configure_controller_service_.reset();
+  reload_controller_libraries_service_.reset();
+  switch_controller_service_.reset();
+  unload_controller_service_.reset();
+  cleanup_controller_service_.reset();
+  list_hardware_components_service_.reset();
+  list_hardware_interfaces_service_.reset();
+  set_hardware_component_state_service_.reset();
 }
 
 controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::load_controller(
@@ -5496,6 +5521,12 @@ void ControllerManager::teardown()
 
   RCLCPP_INFO(get_logger(), "Flushing robot_description...");
   robot_description_.clear();
+
+  RCLCPP_INFO(get_logger(), "Resetting services...");
+
+  reset_services();
+  reset_robot_description_callback();
+  init_robot_description_callback();
 
   RCLCPP_INFO(get_logger(), "Controller Manager teardown complete.");
 }
