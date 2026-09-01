@@ -1287,30 +1287,32 @@ void ControllerManager::init_services()
         std::bind(&ControllerManager::set_hardware_component_state_srv_cb, this, _1, _2),
         qos_services, best_effort_callback_group_);
   }
-
-  const std::string cm_name = get_name();
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".update_time", &execution_time_.update_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".read_time", &execution_time_.read_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".write_time", &execution_time_.write_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".total_time", &execution_time_.total_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_time", &execution_time_.switch_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_chained_mode_time",
-    &execution_time_.switch_chained_mode_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_perform_mode_time",
-    &execution_time_.switch_perform_mode_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".deactivation_time",
-    &execution_time_.deactivation_time);
-  REGISTER_ENTITY(
-    hardware_interface::CM_STATISTICS_KEY, cm_name + ".activation_time",
-    &execution_time_.activation_time);
+  if (!cm_statistics_registered_) {
+    const std::string cm_name = get_name();
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".update_time", &execution_time_.update_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".read_time", &execution_time_.read_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".write_time", &execution_time_.write_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".total_time", &execution_time_.total_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_time", &execution_time_.switch_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_chained_mode_time",
+        &execution_time_.switch_chained_mode_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_perform_mode_time",
+        &execution_time_.switch_perform_mode_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".deactivation_time",
+        &execution_time_.deactivation_time);
+    REGISTER_ENTITY(
+        hardware_interface::CM_STATISTICS_KEY, cm_name + ".activation_time",
+        &execution_time_.activation_time);
+    cm_statistics_registered_ = true;
+  }
 }
 
 void ControllerManager::reset_services()

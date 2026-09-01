@@ -340,6 +340,7 @@ protected:
   /// ResourceManager
   LifecycleCallbackReturn configure();
   void init_services();
+  void reset_services();
 
   std::unique_ptr<ControllerManagerStateMachine> state_machine_;
   bool allow_inactive_ = false;
@@ -466,6 +467,7 @@ private:
    * replacement.
    */
   void init_robot_description_callback();
+  void reset_robot_description_callback();
 
   /// Set the initial lifecycle state of hardware components.
   /**
@@ -771,6 +773,7 @@ private:
 
   /// mutex copied from ROS1 Control, protects service callbacks
   /// not needed if we're guaranteed that the callbacks don't come from multiple threads
+  bool cm_statistics_registered_{false};
   std::mutex services_lock_;
   rclcpp::Publisher<controller_manager_msgs::msg::ControllerManagerActivity>::SharedPtr
     controller_manager_activity_publisher_;
