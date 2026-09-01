@@ -2616,11 +2616,19 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
 
   if (any_commander_controller_active())
   {
-    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE)
+    {
+        lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+    }
   }
   else
   {
-    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    // if allow_active_=true, we know this transition is caused by controller deactivation
+    // if it is false, on_deactivate() was called and this switch is coming from there.
+    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE && allow_active_)
+    {
+        lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    }
   }
 
   clear_requests();
@@ -5303,42 +5311,11 @@ void ControllerManager::lifecycle_allow_active(bool allow)
     !allow_active_ &&
     state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
   {
-    std::vector<ControllerSpec> controllers_list = get_loaded_controllers();
-    std::vector<std::string> controllers_to_deactivate;
-
-    for (auto & controller : controllers_list)
-    {
-      if (
-        is_controller_active(controller.c) &&
-        controller_requests_command_interface(*(controller.c)))
-      {
-        controllers_to_deactivate.push_back(controller.info.name);
-      }
-    }
-
-    RCLCPP_INFO(get_logger(), "deactivating ControllerManager");
-
-    if (!controllers_to_deactivate.empty())
-    {
-      // as this is non-rt, use switch_controller()
-      if (
-        // we switch to inactive automatically if we deactivate all commander controllers
-        switch_controller(
-          {}, controllers_to_deactivate,
-          controller_manager_msgs::srv::SwitchController::Request::BEST_EFFORT, true,
-          rclcpp::Duration::from_seconds(3.0)) != controller_interface::return_type::OK)
-      {
-        RCLCPP_ERROR(get_logger(), "Failed to deactivate controllers. Check logs for details.");
-        lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
-      }
-    }
-    else
-    {
-      // if no commander controllers, still go inactive.
-      lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-    }
+    RCLCPP_INFO(get_logger(), "Active state disallowed, deactivating ControllerManager");
+    lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
   }
 }
+
 void ControllerManager::shutdown()
 {
   if (state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED)
@@ -5404,11 +5381,6 @@ void ControllerManagerStateMachine::transition_to(uint8_t target_state_id)
     case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
       if (current_state_id_ == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE)
       {
-        result = on_cleanup(current_state);
-      }
-      else if (current_state_id_ == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
-      {
-        on_deactivate(current_state);
         result = on_cleanup(current_state);
       }
       break;
@@ -5534,6 +5506,35 @@ LifecycleCallbackReturn ControllerManagerStateMachine::on_activate(
 LifecycleCallbackReturn ControllerManagerStateMachine::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  // synchronize permissions
+  cm_->allow_active_ = false;
+  cm_->allow_inactive_ = true;
+
+  std::vector<ControllerSpec> controllers_list = cm_->get_loaded_controllers();
+  std::vector<std::string> controllers_to_deactivate;
+
+  for (auto & controller : controllers_list)
+  {
+    if (is_controller_active(controller.c) && controller_requests_command_interface(*(controller.c)))
+    {
+      controllers_to_deactivate.push_back(controller.info.name);
+    }
+  }
+
+  if (!controllers_to_deactivate.empty())
+  {
+    RCLCPP_INFO(cm_->get_logger(), "Deactivating commander controllers...");
+    // Use the non-rt switch_controller method
+    if (cm_->switch_controller(
+          {}, controllers_to_deactivate,
+          controller_manager_msgs::srv::SwitchController::Request::BEST_EFFORT, true,
+          rclcpp::Duration::from_seconds(3.0)) != controller_interface::return_type::OK)
+    {
+      RCLCPP_ERROR(cm_->get_logger(), "Failed to deactivate controllers.");
+      return LifecycleCallbackReturn::FAILURE;
+    }
+  }
+
   RCLCPP_INFO(cm_->get_logger(), "Deactivation successful.");
   current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
   return LifecycleCallbackReturn::SUCCESS;
