@@ -75,10 +75,7 @@ public:
   LifecycleCallbackReturn on_deactivate(
     const rclcpp_lifecycle::State & /*previous_state*/) override;
   LifecycleCallbackReturn on_shutdown(const rclcpp_lifecycle::State & /*previous_state*/) override;
-  LifecycleCallbackReturn on_cleanup(const rclcpp_lifecycle::State & /*previous_state*/) override
-  {
-    return LifecycleCallbackReturn::FAILURE;  // unused for now.
-  };
+  LifecycleCallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
   LifecycleCallbackReturn on_error(const rclcpp_lifecycle::State & /*previous_state*/) override
   {
     return LifecycleCallbackReturn::FAILURE;  // unused for now.

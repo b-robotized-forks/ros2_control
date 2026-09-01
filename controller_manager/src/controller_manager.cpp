@@ -5294,7 +5294,8 @@ bool ControllerManagerStateMachine::is_transition_valid(uint8_t target_state_id)
     case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
       return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
-      return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+      return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE ||
+              target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
     case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
       return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     default:
@@ -5338,6 +5339,17 @@ void ControllerManagerStateMachine::transition_to(uint8_t target_state_id)
 
   switch (target_state_id)
   {
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
+      if (current_state_id_ == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE)
+      {
+        result = on_cleanup(current_state);
+      }
+      else if (current_state_id_ == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
+      {
+        on_deactivate(current_state);
+        result = on_cleanup(current_state);
+      }
+      break;
     case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
       if (current_state_id_ == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED)
       {
@@ -5488,27 +5500,24 @@ void ControllerManager::teardown()
   RCLCPP_INFO(get_logger(), "Controller Manager teardown complete.");
 }
 
-// LifecycleCallbackReturn ControllerManagerStateMachine::on_cleanup(const rclcpp_lifecycle::State &
-// /*previous_state*/)
-// {
-//   if (/*previous_state*/.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED){
-//     // if unconfigured, nothing to clean up
-//     return LifecycleCallbackReturn::SUCCESS;
-//   }
+LifecycleCallbackReturn ControllerManagerStateMachine::on_cleanup(const rclcpp_lifecycle::State &
+previous_state)
+{
+  if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED){
+    // if unconfigured, nothing to clean up
+    return LifecycleCallbackReturn::SUCCESS;
+  }
 
-//   // For cleanup, also add resetting of all services, separate from executor_->cancel()
+  RCLCPP_INFO(cm_->get_logger(), "Starting 'cleanup' transition from state '%s'.",
+  previous_state.label().c_str());
 
-//   RCLCPP_INFO(cm_->get_logger(), "Starting 'cleanup' transition from state '%s'.",
-//   /*previous_state*/.label().c_str());
+  cm_->teardown();
 
-//   cm_->teardown();
+  RCLCPP_INFO(cm_->get_logger(), "Lifecycle: cleanup complete. Transitioning to initial, 'unconfigured' state. Call configure() to restart.");
 
-//   RCLCPP_INFO(cm_->get_logger(), "Lifecycle: cleanup complete. Transitioning to initial,
-//   'unconfigured' state. Call configure() to restart.");
-
-//   current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
-//   return LifecycleCallbackReturn::SUCCESS;
-// }
+  current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
+  return LifecycleCallbackReturn::SUCCESS;
+}
 
 void ControllerManager::cancel_executor()
 {
