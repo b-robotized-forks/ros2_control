@@ -584,6 +584,7 @@ ControllerManager::ControllerManager(
   // activate_all_hw_components becomes deprecated, as we have the ControllerManagerStateMachine to
   // manage activation states.
   state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
+  lifecycle_node_facade_ = std::make_unique<LifecycleNodeFacade>(this);
   initialize_parameters();
   init_resource_manager(urdf);
   this->configure();
@@ -609,6 +610,7 @@ ControllerManager::ControllerManager(
   runtime_config_prefix_path_(runtime_config_prefix_path)
 {
   state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
+  lifecycle_node_facade_ = std::make_unique<LifecycleNodeFacade>(this);
   initialize_parameters();
   this->configure();
 }
@@ -1206,6 +1208,10 @@ void ControllerManager::init_services()
     best_effort_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   }
 
+  if (lifecycle_node_facade_) {
+    lifecycle_node_facade_->init_services(best_effort_callback_group_);
+  }
+
   using namespace std::placeholders;
 
   if (!list_controllers_service_) {
@@ -1317,6 +1323,9 @@ void ControllerManager::init_services()
 
 void ControllerManager::reset_services()
 {
+  if (lifecycle_node_facade_) {
+    lifecycle_node_facade_->reset_services();
+  }
   list_controllers_service_.reset();
   list_controller_types_service_.reset();
   load_controller_service_.reset();
@@ -5425,13 +5434,6 @@ void ControllerManager::lifecycle_transition_to(uint8_t target_state_id)
   switch (target_state_id)
   {
     case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
-      if (state_machine_->get_state_id() >= lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE)
-      {
-        RCLCPP_WARN(
-          get_logger(), "Cannot 'unconfigure' the controller manager. Feature not implemented.");
-        log_abort();
-        return;
-      }
       break;
 
     case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
@@ -5571,6 +5573,8 @@ void ControllerManager::teardown()
 LifecycleCallbackReturn ControllerManagerStateMachine::on_cleanup(const rclcpp_lifecycle::State &
 previous_state)
 {
+  current_state_id_ = lifecycle_msgs::msg::State::TRANSITION_STATE_CLEANINGUP;
+
   if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED){
     // if unconfigured, nothing to clean up
     return LifecycleCallbackReturn::SUCCESS;

@@ -28,6 +28,7 @@
 #include "controller_interface/controller_interface_base.hpp"
 
 #include "controller_manager/controller_spec.hpp"
+#include "controller_manager/lifecycle_node_facade.hpp"
 #include "controller_manager_msgs/msg/controller_manager_activity.hpp"
 #include "controller_manager_msgs/srv/cleanup_controller.hpp"
 #include "controller_manager_msgs/srv/configure_controller.hpp"
@@ -106,6 +107,9 @@ public:
         return rclcpp_lifecycle::State{
           current_state_id_, hardware_interface::lifecycle_state_names::UNKNOWN};
         break;
+      case lifecycle_msgs::msg::State::TRANSITION_STATE_CLEANINGUP:
+        return rclcpp_lifecycle::State{
+          current_state_id_, "cleaningup"};
     }
     // should not be reached
     return rclcpp_lifecycle::State{};
@@ -332,12 +336,14 @@ public:
 protected:
   friend class controller_manager::ControllerManagerStateMachine;  // allow access to private
                                                                    // members of the state machine
+  friend class controller_manager::LifecycleNodeFacade;
 
   /// \brief True if at least one controller which claims command interfaces is active.
   bool any_commander_controller_active();
 
   /// \brief here we wait on robot_description, get parameters, initialize services and instantiate
   /// ResourceManager
+  std::unique_ptr<LifecycleNodeFacade> lifecycle_node_facade_;
   LifecycleCallbackReturn configure();
   void init_services();
   void reset_services();
