@@ -1296,16 +1296,6 @@ void ControllerManager::init_services()
         qos_services, best_effort_callback_group_);
   }
   if (!cm_statistics_registered_) {
-
-    INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
-      this, hardware_interface::DEFAULT_INTROSPECTION_TOPIC,
-      hardware_interface::DEFAULT_REGISTRY_KEY);
-    START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::DEFAULT_REGISTRY_KEY);
-    INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
-      this, hardware_interface::CM_STATISTICS_TOPIC, 
-      hardware_interface::CM_STATISTICS_KEY);
-    START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::CM_STATISTICS_KEY);  
-
     const std::string cm_name = get_name();
     REGISTER_ENTITY(
         hardware_interface::CM_STATISTICS_KEY, cm_name + ".update_time", &execution_time_.update_time);
@@ -5580,6 +5570,17 @@ void ControllerManager::teardown()
   reset_robot_description_callback();
 
   CLEAR_ALL_ROS2_CONTROL_INTROSPECTION_REGISTRIES();
+
+  // Initialize empty registries so URDF callback can register hardware
+  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
+    this, hardware_interface::DEFAULT_INTROSPECTION_TOPIC,
+    hardware_interface::DEFAULT_REGISTRY_KEY);
+  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::DEFAULT_REGISTRY_KEY);
+  
+  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
+    this, hardware_interface::CM_STATISTICS_TOPIC, hardware_interface::CM_STATISTICS_KEY);
+  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::CM_STATISTICS_KEY);
+
   cm_statistics_registered_ = false;
 
   RCLCPP_INFO(get_logger(), "Controller Manager teardown complete.");
