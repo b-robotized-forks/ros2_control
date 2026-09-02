@@ -3582,6 +3582,9 @@ void ControllerManager::manage_switch()
 controller_interface::return_type ControllerManager::update(
   const rclcpp::Time & time, const rclcpp::Duration & period)
 {
+  std::vector<ControllerSpec> & rt_controller_list =
+    rt_controllers_wrapper_.update_and_get_used_by_rt_list();
+
   if (
     state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE &&
     state_machine_->get_state_id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
@@ -3595,8 +3598,6 @@ controller_interface::return_type ControllerManager::update(
   execution_time_.activation_time = 0.0;
   execution_time_.deactivation_time = 0.0;
   execution_time_.switch_perform_mode_time = 0.0;
-  std::vector<ControllerSpec> & rt_controller_list =
-    rt_controllers_wrapper_.update_and_get_used_by_rt_list();
 
   auto ret = controller_interface::return_type::OK;
   ++update_loop_counter_;
