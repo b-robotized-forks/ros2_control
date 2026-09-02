@@ -708,6 +708,15 @@ LifecycleCallbackReturn ControllerManager::configure()
   diagnostics_updater_.add(
     "Controller Manager Activity", this,
     &ControllerManager::controller_manager_diagnostic_callback);
+  
+  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
+    this, hardware_interface::DEFAULT_INTROSPECTION_TOPIC,
+    hardware_interface::DEFAULT_REGISTRY_KEY);
+  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::DEFAULT_REGISTRY_KEY);
+  
+  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
+    this, hardware_interface::CM_STATISTICS_TOPIC, hardware_interface::CM_STATISTICS_KEY);
+  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::CM_STATISTICS_KEY);
 
   // Add on_shutdown callback to stop the controller manager
   rclcpp::Context::SharedPtr context = this->get_node_base_interface()->get_context();
@@ -5511,9 +5520,6 @@ LifecycleCallbackReturn ControllerManagerStateMachine::on_activate(
 LifecycleCallbackReturn ControllerManagerStateMachine::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  // synchronize permissions
-  cm_->allow_active_ = false;
-  cm_->allow_inactive_ = true;
 
   std::vector<ControllerSpec> controllers_list = cm_->get_loaded_controllers();
   std::vector<std::string> controllers_to_deactivate;
