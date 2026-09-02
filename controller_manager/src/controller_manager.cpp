@@ -631,30 +631,40 @@ ControllerManager::~ControllerManager()
 bool ControllerManager::shutdown_controllers()
 {
   RCLCPP_INFO(get_logger(), "Shutting down all controllers in the controller manager.");
-  // Shutdown all controllers
-  std::lock_guard<std::recursive_mutex> guard(rt_controllers_wrapper_.controllers_lock_);
-  std::vector<ControllerSpec> controllers_list = rt_controllers_wrapper_.get_updated_list(guard);
   bool ctrls_shutdown_status = true;
-  for (auto & controller : controllers_list)
+  std::vector<std::string> loaded_controllers = get_controller_names();
+  
+  // Decativate any active controllers
   {
-    if (is_controller_active(controller.c))
+    std::lock_guard<std::recursive_mutex> guard(rt_controllers_wrapper_.controllers_lock_);
+    std::vector<ControllerSpec> controllers_list = rt_controllers_wrapper_.get_updated_list(guard);
+    
+    for (auto & controller : controllers_list)
     {
-      RCLCPP_INFO(
-        get_logger(), "Deactivating controller '%s'", controller.c->get_node()->get_name());
-      controller.c->get_node()->deactivate();
-      controller.c->release_interfaces();
+      if (is_controller_active(controller.c))
+      {
+        RCLCPP_INFO(
+          get_logger(), "Force deactivating controller '%s'", controller.c->get_node()->get_name());
+        controller.c->get_node()->deactivate();
+        controller.c->release_interfaces();
+      }
+      if (controller.c->is_chainable())
+      {
+        controller.c->set_chained_mode(false);
+      }
     }
-    if (is_controller_inactive(*controller.c) || is_controller_unconfigured(*controller.c))
-    {
-      RCLCPP_INFO(
-        get_logger(), "Shutting down controller '%s'", controller.c->get_node()->get_name());
-      shutdown_controller(controller);
-    }
-    ctrls_shutdown_status &=
-      (controller.c->get_node()->get_current_state().id() ==
-       lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
-    executor_->remove_node(controller.c->get_node()->get_node_base_interface());
   }
+
+  // unload_controller() calls cleanup, shutdown and deregisters introspection topics.
+  for (const auto & ctrl_name : loaded_controllers)
+  {
+    if (unload_controller(ctrl_name) != controller_interface::return_type::OK)
+    {
+      RCLCPP_ERROR(get_logger(), "Failed to unload controller: '%s'", ctrl_name.c_str());
+      ctrls_shutdown_status = false;
+    }
+  }
+
   publish_activity();
   return ctrls_shutdown_status;
 }
@@ -698,14 +708,6 @@ LifecycleCallbackReturn ControllerManager::configure()
   diagnostics_updater_.add(
     "Controller Manager Activity", this,
     &ControllerManager::controller_manager_diagnostic_callback);
-
-  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
-    this, hardware_interface::DEFAULT_INTROSPECTION_TOPIC,
-    hardware_interface::DEFAULT_REGISTRY_KEY);
-  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::DEFAULT_REGISTRY_KEY);
-  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
-    this, hardware_interface::CM_STATISTICS_TOPIC, hardware_interface::CM_STATISTICS_KEY);
-  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::CM_STATISTICS_KEY);  
 
   // Add on_shutdown callback to stop the controller manager
   rclcpp::Context::SharedPtr context = this->get_node_base_interface()->get_context();
