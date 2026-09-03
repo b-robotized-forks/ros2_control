@@ -58,8 +58,9 @@ void LifecycleNodeFacade::change_state_cb(
       target_state_id = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
       break;
     case lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE:
-      target_state_id = lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
-      break;
+      RCLCPP_WARN(cm_->get_logger(), "Transition to 'active' depends on the controllers. Manual lifecycle transition not possible.");
+      res->success = false;
+      return;
     case lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE:
       target_state_id = lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
       break;
