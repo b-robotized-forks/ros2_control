@@ -49,6 +49,7 @@
 #include "pluginlib/class_loader.hpp"
 
 #include "lifecycle_msgs/msg/state.hpp"
+#include "lifecycle_msgs/msg/transition_event.hpp"
 #include "rclcpp/executor.hpp"
 #include "rclcpp/node.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
@@ -348,6 +349,7 @@ protected:
   void init_services();
   void reset_services();
 
+  rclcpp::Publisher<lifecycle_msgs::msg::TransitionEvent>::SharedPtr controller_manager_transition_event_publisher_;
   std::unique_ptr<ControllerManagerStateMachine> state_machine_;
   bool allow_inactive_ = false;
   bool allow_active_ = false;

@@ -675,6 +675,10 @@ LifecycleCallbackReturn ControllerManager::configure()
   controller_manager_activity_publisher_ =
     create_publisher<controller_manager_msgs::msg::ControllerManagerActivity>(
       "~/activity", rclcpp::QoS(1).reliable().transient_local());
+  controller_manager_transition_event_publisher_ = 
+    create_publisher<lifecycle_msgs::msg::TransitionEvent>(
+      "~/transition_event", rclcpp::QoS(1).reliable().transient_local());
+
   rt_controllers_wrapper_.set_on_switch_callback(
     std::bind(&ControllerManager::publish_activity, this));
   if (resource_manager_)
@@ -5306,9 +5310,48 @@ std::string lifecycle_state_to_string(uint8_t state_id)
       return "ACTIVE";
     case lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED:
       return "FINALIZED";
+    case lifecycle_msgs::msg::State::TRANSITION_STATE_CLEANINGUP:
+      return "CLEANINGUP";
     default:
       return "UNKNOWN";
   }
+}
+
+lifecycle_msgs::msg::Transition lifecycle_get_transition_message(uint8_t initial_state, uint8_t new_state)
+{
+  lifecycle_msgs::msg::Transition transition;
+  transition.id = 0;
+  transition.label = "unknown";
+
+  using lifecycle_msgs::msg::State;
+  using lifecycle_msgs::msg::Transition;
+
+  if (initial_state == State::PRIMARY_STATE_UNCONFIGURED && new_state == State::PRIMARY_STATE_INACTIVE) {
+    transition.id = Transition::TRANSITION_CONFIGURE;
+    transition.label = "configure";
+  } else if (initial_state == State::PRIMARY_STATE_INACTIVE && new_state == State::PRIMARY_STATE_ACTIVE) {
+    transition.id = Transition::TRANSITION_ACTIVATE;
+    transition.label = "activate";
+  } else if (initial_state == State::PRIMARY_STATE_ACTIVE && new_state == State::PRIMARY_STATE_INACTIVE) {
+    transition.id = Transition::TRANSITION_DEACTIVATE;
+    transition.label = "deactivate";
+  } else if (initial_state == State::PRIMARY_STATE_INACTIVE && new_state == State::PRIMARY_STATE_UNCONFIGURED) {
+    transition.id = Transition::TRANSITION_CLEANUP;
+    transition.label = "cleanup";
+  } else if (new_state == State::PRIMARY_STATE_FINALIZED) {
+    if (initial_state == State::PRIMARY_STATE_UNCONFIGURED) {
+      transition.id = Transition::TRANSITION_UNCONFIGURED_SHUTDOWN;
+      transition.label = "shutdown";
+    } else if (initial_state == State::PRIMARY_STATE_INACTIVE) {
+      transition.id = Transition::TRANSITION_INACTIVE_SHUTDOWN;
+      transition.label = "shutdown";
+    } else if (initial_state == State::PRIMARY_STATE_ACTIVE) {
+      transition.id = Transition::TRANSITION_ACTIVE_SHUTDOWN;
+      transition.label = "shutdown";
+    }
+  }
+
+  return transition;
 }
 
 // -- PUBLIC LIFECYCLE API --
@@ -5476,9 +5519,26 @@ void ControllerManager::lifecycle_transition_to(uint8_t target_state_id)
       // we can always finalize.
       break;
   }
-
-  // If we pass, request the transition from the state machine.
+  
+  const uint8_t initial_state_id = state_machine_->get_state_id();
   state_machine_->transition_to(target_state_id);
+  const uint8_t new_state_id = state_machine_->get_state_id();
+
+  if (initial_state_id != new_state_id && controller_manager_transition_event_publisher_)
+  {
+    lifecycle_msgs::msg::TransitionEvent msg;
+    msg.timestamp = this->now().nanoseconds();
+    
+    msg.transition = lifecycle_get_transition_message(initial_state_id, new_state_id);
+
+    msg.start_state.id = initial_state_id;
+    msg.start_state.label = lifecycle_state_to_string(initial_state_id);
+    
+    msg.goal_state.id = new_state_id;
+    msg.goal_state.label = lifecycle_state_to_string(new_state_id);
+
+    controller_manager_transition_event_publisher_->publish(msg);
+  }
 }
 
 bool ControllerManager::any_commander_controller_active()
