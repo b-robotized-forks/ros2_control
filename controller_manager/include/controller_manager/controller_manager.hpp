@@ -119,11 +119,14 @@ public:
   /// Usage: state_machine_->transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
   void transition_to(uint8_t target_state_id);
 
+  bool is_transitioning() const { return is_transitioning_; }
+
 private:
   // ensures state graph integrity
   bool is_transition_valid(uint8_t target_state_id);
   ControllerManager * cm_;
   uint8_t current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
+  bool is_transitioning_ = false;
 };
 
 class ControllerManager : public rclcpp::Node

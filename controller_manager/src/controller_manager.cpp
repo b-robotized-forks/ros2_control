@@ -2640,16 +2640,19 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
 
   if (any_commander_controller_active())
   {
-    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE)
+    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE && !state_machine_->is_transitioning())
     {
         lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
     }
   }
   else
   {
-    // if allow_active_=true, we know this transition is caused by controller deactivation
-    // if it is false, on_deactivate() was called and this switch is coming from there.
-    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE && allow_active_)
+    // allow_active_ == true means this is a standard controller deactivation, so we fall back to INACTIVE.
+    // allow_active_ == false means active state is already globally disabled, so no auto-transition is needed.
+    // !is_transitioning() ensures we don't trigger a recursive loop if switch_controller was called from inside on_deactivate().
+    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE 
+        && allow_active_
+        && !state_machine_->is_transitioning())
     {
         lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     }
@@ -5409,6 +5412,16 @@ bool ControllerManagerStateMachine::is_transition_valid(uint8_t target_state_id)
 
 void ControllerManagerStateMachine::transition_to(uint8_t target_state_id)
 {
+
+  // RAII struct to manage is_transiitoning_ flag.
+  // we have early returns and possibility of exceptions, so this is a 
+  // clean way to reset the flag when we leave this function IN ANY WAY
+  struct TransitionGuard {
+    bool & flag;
+    TransitionGuard(bool & f) : flag(f) { flag = true; }
+    ~TransitionGuard() { flag = false; }
+  } guard(is_transitioning_);
+
   RCLCPP_INFO(
     cm_->get_logger(), "Requesting transition: %s -> %s",
     lifecycle_state_to_string(current_state_id_).c_str(),
