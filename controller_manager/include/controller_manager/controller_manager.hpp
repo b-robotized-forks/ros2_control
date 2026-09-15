@@ -28,6 +28,7 @@
 #include "controller_interface/controller_interface_base.hpp"
 
 #include "controller_manager/controller_spec.hpp"
+#include "controller_manager/lifecycle_node_facade.hpp"
 #include "controller_manager_msgs/msg/controller_manager_activity.hpp"
 #include "controller_manager_msgs/srv/cleanup_controller.hpp"
 #include "controller_manager_msgs/srv/configure_controller.hpp"
@@ -48,6 +49,7 @@
 #include "pluginlib/class_loader.hpp"
 
 #include "lifecycle_msgs/msg/state.hpp"
+#include "lifecycle_msgs/msg/transition_event.hpp"
 #include "rclcpp/executor.hpp"
 #include "rclcpp/node.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
@@ -75,10 +77,7 @@ public:
   LifecycleCallbackReturn on_deactivate(
     const rclcpp_lifecycle::State & /*previous_state*/) override;
   LifecycleCallbackReturn on_shutdown(const rclcpp_lifecycle::State & /*previous_state*/) override;
-  LifecycleCallbackReturn on_cleanup(const rclcpp_lifecycle::State & /*previous_state*/) override
-  {
-    return LifecycleCallbackReturn::FAILURE;  // unused for now.
-  };
+  LifecycleCallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
   LifecycleCallbackReturn on_error(const rclcpp_lifecycle::State & /*previous_state*/) override
   {
     return LifecycleCallbackReturn::FAILURE;  // unused for now.
@@ -109,6 +108,9 @@ public:
         return rclcpp_lifecycle::State{
           current_state_id_, hardware_interface::lifecycle_state_names::UNKNOWN};
         break;
+      case lifecycle_msgs::msg::State::TRANSITION_STATE_CLEANINGUP:
+        return rclcpp_lifecycle::State{
+          current_state_id_, "cleaningup"};
     }
     // should not be reached
     return rclcpp_lifecycle::State{};
@@ -117,11 +119,14 @@ public:
   /// Usage: state_machine_->transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
   void transition_to(uint8_t target_state_id);
 
+  bool is_transitioning() const { return is_transitioning_; }
+
 private:
   // ensures state graph integrity
   bool is_transition_valid(uint8_t target_state_id);
   ControllerManager * cm_;
   uint8_t current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED;
+  bool is_transitioning_ = false;
 };
 
 class ControllerManager : public rclcpp::Node
@@ -335,15 +340,19 @@ public:
 protected:
   friend class controller_manager::ControllerManagerStateMachine;  // allow access to private
                                                                    // members of the state machine
+  friend class controller_manager::LifecycleNodeFacade;
 
   /// \brief True if at least one controller which claims command interfaces is active.
   bool any_commander_controller_active();
 
   /// \brief here we wait on robot_description, get parameters, initialize services and instantiate
   /// ResourceManager
+  std::unique_ptr<LifecycleNodeFacade> lifecycle_node_facade_;
   LifecycleCallbackReturn configure();
   void init_services();
+  void reset_services();
 
+  rclcpp::Publisher<lifecycle_msgs::msg::TransitionEvent>::SharedPtr controller_manager_transition_event_publisher_;
   std::unique_ptr<ControllerManagerStateMachine> state_machine_;
   bool allow_inactive_ = false;
   bool allow_active_ = false;
@@ -469,6 +478,7 @@ private:
    * replacement.
    */
   void init_robot_description_callback();
+  void reset_robot_description_callback();
 
   /// Set the initial lifecycle state of hardware components.
   /**
@@ -774,6 +784,7 @@ private:
 
   /// mutex copied from ROS1 Control, protects service callbacks
   /// not needed if we're guaranteed that the callbacks don't come from multiple threads
+  bool cm_statistics_registered_{false};
   std::mutex services_lock_;
   rclcpp::Publisher<controller_manager_msgs::msg::ControllerManagerActivity>::SharedPtr
     controller_manager_activity_publisher_;

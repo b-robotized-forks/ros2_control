@@ -35,6 +35,7 @@ generate_parameter_library(controller_manager_parameters
 
 add_library(controller_manager SHARED
   src/controller_manager.cpp
+  src/lifecycle_node_facade.cpp
 )
 target_compile_features(controller_manager PUBLIC cxx_std_17)
 target_include_directories(controller_manager PUBLIC
@@ -53,7 +54,8 @@ target_link_libraries(controller_manager PUBLIC
                       libstatistics_collector::libstatistics_collector
                       fmt::fmt
                       ${std_msgs_TARGETS}
-                      ${controller_manager_msgs_TARGETS})
+                      ${controller_manager_msgs_TARGETS}
+                      ${lifecycle_msgs_TARGETS})
 
 add_executable(ros2_control_node
   src/ros2_control_node.cpp
