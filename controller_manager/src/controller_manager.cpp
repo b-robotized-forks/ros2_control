@@ -602,9 +602,9 @@ ControllerManager::ControllerManager(
   chainable_loader_(
     std::make_shared<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>(
       kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
+  runtime_config_prefix_path_(runtime_config_prefix_path),
   robot_description_(urdf),
-  activate_all_hw_components_(activate_all_hw_components),
-  runtime_config_prefix_path_(runtime_config_prefix_path)
+  activate_all_hw_components_(activate_all_hw_components)
 {
   // activate_all_hw_components becomes deprecated, as we have the ControllerManagerStateMachine to
   // manage activation states.
@@ -630,9 +630,8 @@ ControllerManager::ControllerManager(
   chainable_loader_(
     std::make_shared<pluginlib::ClassLoader<controller_interface::ChainableControllerInterface>>(
       kControllerInterfaceNamespace, kChainableControllerInterfaceClassName)),
-  cm_node_options_(options),
-  robot_description_(resource_manager_->get_robot_description()),
-  runtime_config_prefix_path_(runtime_config_prefix_path)
+  runtime_config_prefix_path_(runtime_config_prefix_path),
+  robot_description_(resource_manager_->get_robot_description())
 {
   state_machine_ = std::make_unique<ControllerManagerStateMachine>(this);
   lifecycle_node_facade_ = std::make_unique<LifecycleNodeFacade>(this);
@@ -5545,8 +5544,8 @@ void ControllerManager::lifecycle_transition_to(uint8_t target_state_id)
   if (initial_state_id != new_state_id && controller_manager_transition_event_publisher_)
   {
     lifecycle_msgs::msg::TransitionEvent msg;
-    msg.timestamp = this->now().nanoseconds();
-    
+    msg.stamp = this->now();
+
     msg.transition = lifecycle_get_transition_message(initial_state_id, new_state_id);
 
     msg.start_state.id = initial_state_id;
