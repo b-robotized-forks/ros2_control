@@ -779,6 +779,13 @@ private:
   std::vector<std::string> ordered_controllers_names_;
 
   // runtime config path publisher
+  /// Prepend the runtime config prefix to a controller parameters file path.
+  /**
+   * \param[in] path Path of the parameters file.
+   * \return The path below the runtime config prefix, or the path itself if the prefix is empty.
+   */
+  std::string resolve_parameters_file_path(const std::string & path) const;
+
   const std::filesystem::path runtime_config_prefix_path_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr runtime_config_prefix_path_publisher_;
 
