@@ -95,15 +95,18 @@ CallbackReturn HardwareComponentInterface::init(
       std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(0.9 / async_thread_params.exec_rate));
 
-    const bool is_slave =
-      (async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SLAVE);
-    if (is_slave)
+    // Slave and detached components synchronize slave controllers: signal after read(),
+    // wait for their update() before write().
+    const bool sync_controllers =
+      (async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SLAVE ||
+       async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::DETACHED);
+    if (sync_controllers)
     {
       REGISTER_ROS2_CONTROL_INTROSPECTION("sync_latency_us", &impl_->sync_latency_us_);
     }
 
     async_handler_->init(
-      [this, is_sensor_type, sync_barrier_timeout_ns, is_slave](
+      [this, is_sensor_type, sync_barrier_timeout_ns, sync_controllers](
         const rclcpp::Time & time, const rclcpp::Duration & period)
       {
         // READ
@@ -115,7 +118,7 @@ CallbackReturn HardwareComponentInterface::init(
           std::chrono::duration_cast<std::chrono::nanoseconds>(read_end_time - read_start_time),
           std::memory_order_release);
 
-        if (is_slave && impl_->controller_sync_signal_)
+        if (sync_controllers && impl_->controller_sync_signal_)
         {
           impl_->controller_sync_signal_->signal_read_finished();
         }
@@ -124,8 +127,8 @@ CallbackReturn HardwareComponentInterface::init(
           return ret_read;
         }
 
-        // if slave, WAIT FOR UPDATE COMPLETES
-        if (is_slave && impl_->controller_sync_signal_ && !is_sensor_type)
+        // wait until all slave controllers finished update()
+        if (sync_controllers && impl_->controller_sync_signal_ && !is_sensor_type)
         {  // if we're a sensor, we don't wait on update
           auto all_updates_complete =
             impl_->controller_sync_signal_->wait_for_signal_updates_finished(

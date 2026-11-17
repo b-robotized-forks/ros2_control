@@ -1354,6 +1354,18 @@ void ControllerManager::reset_services()
   set_hardware_component_state_service_.reset();
 }
 
+std::string ControllerManager::resolve_parameters_file_path(const std::string & path) const
+{
+  // Without a runtime config prefix, the path is used as given.
+  if (runtime_config_prefix_path_.empty())
+  {
+    return path;
+  }
+  const std::filesystem::path full_path =
+    runtime_config_prefix_path_ / std::filesystem::path(path).relative_path();
+  return full_path.lexically_normal().string();
+}
+
 controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::load_controller(
   const std::string & controller_name, const std::string & controller_type)
 {
@@ -1458,23 +1470,15 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::load_c
         controller_spec.info.parameters_files.begin(), controller_spec.info.parameters_files.end(),
         controller_spec.info.parameters_files.begin(),
         [this](const std::string & param_file_path)
-        {
-          std::filesystem::path rel_parameters_file_path(param_file_path);
-          std::filesystem::path full_param_file_path =
-            this->runtime_config_prefix_path_ / rel_parameters_file_path.relative_path();
-          return full_param_file_path.lexically_normal().string();
-        });
+        { return resolve_parameters_file_path(param_file_path); });
     }
     else if (params_files_parameter.get_type() == rclcpp::ParameterType::PARAMETER_STRING)
     {
       RCLCPP_INFO(
         get_logger(), "For controller '%s' parameter file is set as string.",
         controller_name.c_str());
-      const std::filesystem::path rel_parameters_file_path(params_files_parameter.as_string());
-      auto full_param_file_path =
-        runtime_config_prefix_path_ / rel_parameters_file_path.relative_path();
       controller_spec.info.parameters_files.push_back(
-        full_param_file_path.lexically_normal().string());
+        resolve_parameters_file_path(params_files_parameter.as_string()));
     }
     else
     {
