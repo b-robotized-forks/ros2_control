@@ -17,12 +17,22 @@
 
 #include <fmt/compile.h>
 
+#include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
 
 #include "joint_limits/joint_limits.hpp"
+
+#ifdef TRUE
+#undef TRUE
+#endif
+
+#ifdef FALSE
+#undef FALSE
+#endif
 
 namespace hardware_interface
 {

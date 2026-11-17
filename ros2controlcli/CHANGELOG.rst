@@ -2,6 +2,29 @@
 Changelog for package ros2controlcli
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+4.50.0 (2026-11-02)
+-------------------
+* refactor: replace deprecated ros2param API with native rclpy parameter clients (`#3210 <https://github.com/ros-controls/ros2_control/issues/3210>`_) (`#3742 <https://github.com/ros-controls/ros2_control/issues/3742>`_)
+* Include what you use/review (backport `#3696 <https://github.com/ros-controls/ros2_control/issues/3696>`_) (`#3704 <https://github.com/ros-controls/ros2_control/issues/3704>`_)
+* Contributors: mergify[bot]
+
+4.49.0 (2026-10-05)
+-------------------
+
+4.48.1 (2026-09-08)
+-------------------
+
+4.48.0 (2026-09-02)
+-------------------
+* Fix view_controller_chains (backport `#2026 <https://github.com/ros-controls/ros2_control/issues/2026>`_) (`#3588 <https://github.com/ros-controls/ros2_control/issues/3588>`_)
+* Extend unload controller to unload all inactive controllers (`#3466 <https://github.com/ros-controls/ros2_control/issues/3466>`_) (`#3558 <https://github.com/ros-controls/ros2_control/issues/3558>`_)
+* Contributors: mergify[bot]
+
+4.47.0 (2026-08-10)
+-------------------
+* doc: reorder ros2_control TOC (backport `#3478 <https://github.com/ros-controls/ros2_control/issues/3478>`_) (`#3516 <https://github.com/ros-controls/ros2_control/issues/3516>`_)
+* Contributors: mergify[bot]
+
 4.46.0 (2026-07-01)
 -------------------
 

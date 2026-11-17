@@ -17,7 +17,6 @@
 
 #include <limits>
 #include <string>
-#include <vector>
 
 #include "semantic_components/semantic_component_interface.hpp"
 #include "sensor_msgs/msg/range.hpp"
@@ -41,7 +40,7 @@ public:
     const auto data = state_interfaces_[0].get().get_optional();
     if (data.has_value())
     {
-      return data.value();
+      return static_cast<float>(data.value());
     }
     return std::numeric_limits<float>::quiet_NaN();
   }

@@ -2,6 +2,25 @@
 Changelog for package ros2_control_test_assets
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+4.50.0 (2026-11-02)
+-------------------
+* Add GPIO interface validation tests (`#3553 <https://github.com/ros-controls/ros2_control/issues/3553>`_) (`#3694 <https://github.com/ros-controls/ros2_control/issues/3694>`_)
+* Contributors: mergify[bot]
+
+4.49.0 (2026-10-05)
+-------------------
+
+4.48.1 (2026-09-08)
+-------------------
+
+4.48.0 (2026-09-02)
+-------------------
+
+4.47.0 (2026-08-10)
+-------------------
+* Controller Manager recovery from invalid URDF errors (backport `#2775 <https://github.com/ros-controls/ros2_control/issues/2775>`_) (`#3394 <https://github.com/ros-controls/ros2_control/issues/3394>`_)
+* Contributors: mergify[bot]
+
 4.46.0 (2026-07-01)
 -------------------
 * Add read_only attribute to JointInfo and ActuatorInfo (`#3426 <https://github.com/ros-controls/ros2_control/issues/3426>`_) (`#3429 <https://github.com/ros-controls/ros2_control/issues/3429>`_)

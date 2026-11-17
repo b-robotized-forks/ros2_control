@@ -2,6 +2,26 @@
 Changelog for package hardware_interface_testing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+4.50.0 (2026-11-02)
+-------------------
+* Include what you use/review (backport `#3696 <https://github.com/ros-controls/ros2_control/issues/3696>`_) (`#3704 <https://github.com/ros-controls/ros2_control/issues/3704>`_)
+* Add GPIO interface validation tests (`#3553 <https://github.com/ros-controls/ros2_control/issues/3553>`_) (`#3694 <https://github.com/ros-controls/ros2_control/issues/3694>`_)
+* Contributors: mergify[bot]
+
+4.49.0 (2026-10-05)
+-------------------
+
+4.48.1 (2026-09-08)
+-------------------
+
+4.48.0 (2026-09-02)
+-------------------
+* Relax assertions w.r.t. timing on CI runners (`#3535 <https://github.com/ros-controls/ros2_control/issues/3535>`_) (`#3537 <https://github.com/ros-controls/ros2_control/issues/3537>`_)
+* Contributors: mergify[bot]
+
+4.47.0 (2026-08-10)
+-------------------
+
 4.46.0 (2026-07-01)
 -------------------
 * Fix pure virtual error in the hardware component with async mode (`#3321 <https://github.com/ros-controls/ros2_control/issues/3321>`_) (`#3377 <https://github.com/ros-controls/ros2_control/issues/3377>`_)
