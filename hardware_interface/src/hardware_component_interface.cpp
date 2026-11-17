@@ -95,7 +95,7 @@ CallbackReturn HardwareComponentInterface::init(
       std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(0.9 / async_thread_params.exec_rate));
 
-    // Slave and detached components synchronize slave controllers: signal after read(),
+    // Self-paced and detached components synchronize self-paced controllers: signal after read(),
     // wait for their update() before write().
     const bool sync_controllers =
       (async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SELF_PACED ||
@@ -127,7 +127,7 @@ CallbackReturn HardwareComponentInterface::init(
           return ret_read;
         }
 
-        // wait until all slave controllers finished update()
+        // wait until all self-paced controllers finished update()
         if (sync_controllers && impl_->controller_sync_signal_ && !is_sensor_type)
         {  // if we're a sensor, we don't wait on update
           auto all_updates_complete =
