@@ -239,6 +239,10 @@ public:
 
   bool is_async() const;
 
+  /// Return true if the controller is async with the SELF_PACED scheduling policy.
+  bool is_self_paced() const;
+
+  [[deprecated("Use is_self_paced() instead.")]]
   bool is_slave() const;
 
   const std::string & get_robot_description() const;

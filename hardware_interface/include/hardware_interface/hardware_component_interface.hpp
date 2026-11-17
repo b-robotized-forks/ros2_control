@@ -615,7 +615,7 @@ public:
 
   /**
    * Getter for the synchronization signal of an async hardware component with the
-   * 'slave' or 'detached' scheduling policy.
+   * 'self_paced' or 'detached' scheduling policy.
    * Used when we want to ensure async controller update() is executer after its
    * corresponding hardware interface.
    */

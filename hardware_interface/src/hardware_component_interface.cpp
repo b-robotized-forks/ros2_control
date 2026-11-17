@@ -95,10 +95,10 @@ CallbackReturn HardwareComponentInterface::init(
       std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(0.9 / async_thread_params.exec_rate));
 
-    // Slave and detached components synchronize slave controllers: signal after read(),
+    // Self-paced and detached components synchronize self-paced controllers: signal after read(),
     // wait for their update() before write().
     const bool sync_controllers =
-      (async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SLAVE ||
+      (async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SELF_PACED ||
        async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::DETACHED);
     if (sync_controllers)
     {
@@ -127,7 +127,7 @@ CallbackReturn HardwareComponentInterface::init(
           return ret_read;
         }
 
-        // wait until all slave controllers finished update()
+        // wait until all self-paced controllers finished update()
         if (sync_controllers && impl_->controller_sync_signal_ && !is_sensor_type)
         {  // if we're a sensor, we don't wait on update
           auto all_updates_complete =
@@ -138,7 +138,7 @@ CallbackReturn HardwareComponentInterface::init(
           {
             RCLCPP_WARN_THROTTLE(
               get_node()->get_logger(), *get_node()->get_clock(), 1000,
-              "Not all slave controllers finished updating before continuing with write() in the "
+              "Not all self-paced controllers finished updating before continuing with write() in the "
               "allotted time: %ld us",
               sync_barrier_timeout_ns.count() / 1000);
           }
