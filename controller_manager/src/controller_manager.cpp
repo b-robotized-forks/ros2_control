@@ -1790,7 +1790,7 @@ controller_interface::return_type ControllerManager::configure_controller(
   // For cases, when the controller ends up in the unconfigured state from any other state
   cleanup_controller_exported_interfaces(*found_it);
 
-  if (controller->is_async() && controller->is_slave())
+  if (controller->is_async() && controller->is_self_paced())
   {
     const std::string hw_name = controller->get_hardware_name_to_sync();
     auto signal = resource_manager_->get_hardware_sync_signal(hw_name);

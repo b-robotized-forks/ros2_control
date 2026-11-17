@@ -95,15 +95,16 @@ CallbackReturn HardwareComponentInterface::init(
       std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(0.9 / async_thread_params.exec_rate));
 
-    const bool is_slave =
-      (async_thread_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SLAVE);
-    if (is_slave)
+    const bool is_self_paced =
+      (async_thread_params.scheduling_policy ==
+       realtime_tools::AsyncSchedulingPolicy::SELF_PACED);
+    if (is_self_paced)
     {
       REGISTER_ROS2_CONTROL_INTROSPECTION("sync_latency_us", &impl_->sync_latency_us_);
     }
 
     async_handler_->init(
-      [this, is_sensor_type, sync_barrier_timeout_ns, is_slave](
+      [this, is_sensor_type, sync_barrier_timeout_ns, is_self_paced](
         const rclcpp::Time & time, const rclcpp::Duration & period)
       {
         // READ
@@ -115,7 +116,7 @@ CallbackReturn HardwareComponentInterface::init(
           std::chrono::duration_cast<std::chrono::nanoseconds>(read_end_time - read_start_time),
           std::memory_order_release);
 
-        if (is_slave && impl_->controller_sync_signal_)
+        if (is_self_paced && impl_->controller_sync_signal_)
         {
           impl_->controller_sync_signal_->signal_read_finished();
         }
@@ -124,8 +125,8 @@ CallbackReturn HardwareComponentInterface::init(
           return ret_read;
         }
 
-        // if slave, WAIT FOR UPDATE COMPLETES
-        if (is_slave && impl_->controller_sync_signal_ && !is_sensor_type)
+        // if self-paced, wait until the self-paced controllers finished update()
+        if (is_self_paced && impl_->controller_sync_signal_ && !is_sensor_type)
         {  // if we're a sensor, we don't wait on update
           auto all_updates_complete =
             impl_->controller_sync_signal_->wait_for_signal_updates_finished(
@@ -135,7 +136,7 @@ CallbackReturn HardwareComponentInterface::init(
           {
             RCLCPP_WARN_THROTTLE(
               get_node()->get_logger(), *get_node()->get_clock(), 1000,
-              "Not all slave controllers finished updating before continuing with write() in the "
+              "Not all self-paced controllers finished updating before continuing with write() in the "
               "allotted time: %ld us",
               sync_barrier_timeout_ns.count() / 1000);
           }

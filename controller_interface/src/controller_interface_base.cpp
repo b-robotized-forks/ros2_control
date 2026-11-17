@@ -111,11 +111,26 @@ return_type ControllerInterfaceBase::init(
     auto_declare<int>("async_parameters.execution_rate", impl_->ctrl_itf_params_.update_rate);
     auto_declare<bool>("async_parameters.wait_until_initial_trigger", true);
     auto_declare<bool>("async_parameters.print_warnings", true);
+    auto_declare<std::string>("async_parameters.sync_to_hardware", "");
+    // deprecated name of async_parameters.sync_to_hardware
     auto_declare<std::string>("async_parameters.slave_to_hardware", "");
     auto_declare<std::string>("async_parameters.thread_name", "");
 
     impl_->hardware_name_to_sync_ =
+      get_node()->get_parameter("async_parameters.sync_to_hardware").as_string();
+    const std::string deprecated_hardware_name_to_sync =
       get_node()->get_parameter("async_parameters.slave_to_hardware").as_string();
+    if (!deprecated_hardware_name_to_sync.empty())
+    {
+      RCLCPP_WARN(
+        get_node()->get_logger(),
+        "The parameter 'async_parameters.slave_to_hardware' is deprecated and will be removed. "
+        "Use 'async_parameters.sync_to_hardware'.");
+      if (impl_->hardware_name_to_sync_.empty())
+      {
+        impl_->hardware_name_to_sync_ = deprecated_hardware_name_to_sync;
+      }
+    }
     impl_->is_async_ = get_node()->get_parameter("is_async").as_bool();
   }
   catch (const std::exception & e)
@@ -154,7 +169,7 @@ return_type ControllerInterfaceBase::init(
         impl_->async_handler_->reset_variables();
 
         // Register the controller so hardware write waits on read to complete
-        if (this->is_slave())
+        if (this->is_self_paced())
         {
           impl_->hardware_sync_signal_->register_controller();
         }
@@ -169,7 +184,7 @@ return_type ControllerInterfaceBase::init(
       enable_introspection(false);
       impl_->lifecycle_id_.store(this->get_lifecycle_state().id(), std::memory_order_release);
 
-      if (this->is_slave())
+      if (this->is_self_paced())
       {
         impl_->hardware_sync_signal_->unregister_controller();
       }
@@ -304,7 +319,7 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
       async_params.thread_priority);
     impl_->async_handler_ = std::make_unique<realtime_tools::AsyncFunctionHandler<return_type>>();
 
-    if (async_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SLAVE)
+    if (async_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SELF_PACED)
     {
       // TODO: (nb) do we parametrize this 0.9?
       std::chrono::nanoseconds sync_signal_timeout =
@@ -532,7 +547,7 @@ void ControllerInterfaceBase::stop_async_handler_thread()
 {
   if (is_async() && impl_->async_handler_ && impl_->async_handler_->is_running())
   {
-    if (this->is_slave())
+    if (this->is_self_paced())
     {
       impl_->hardware_sync_signal_->unregister_controller();
     }
@@ -540,21 +555,22 @@ void ControllerInterfaceBase::stop_async_handler_thread()
   }
 }
 
-bool ControllerInterfaceBase::is_slave() const
+bool ControllerInterfaceBase::is_self_paced() const
 {
-  auto scheduling_policy =
+  const auto scheduling_policy =
     get_node()->get_parameter("async_parameters.scheduling_policy").as_string();
-  if (scheduling_policy != "slave")
-  {
-    return false;
-  }
-  return true;
+  // 'slave' is the deprecated name of 'self_paced'
+  return scheduling_policy == "self_paced" || scheduling_policy == "slave";
 }
+
+bool ControllerInterfaceBase::is_slave() const { return is_self_paced(); }
+
 bool ControllerInterfaceBase::set_sync_signal(std::shared_ptr<realtime_tools::SyncSignal> signal)
 {
-  if (!this->is_slave())
+  if (!this->is_self_paced())
   {
-    RCLCPP_INFO(get_node()->get_logger(), "AsyncSchedulingPolicy must be SLAVE to get sync_signal");
+    RCLCPP_INFO(
+      get_node()->get_logger(), "AsyncSchedulingPolicy must be SELF_PACED to get sync_signal");
     return false;
   }
 
