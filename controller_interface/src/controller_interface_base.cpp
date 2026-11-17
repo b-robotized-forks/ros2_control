@@ -14,8 +14,11 @@
 
 #include "controller_interface/controller_interface_base.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "hardware_interface/introspection.hpp"
@@ -38,7 +41,27 @@ struct ControllerInterfaceBase::ControllerInterfaceBaseImpl
   double sync_latency_us_ = 0.0;
   // time of the last update() of a self-paced controller
   rclcpp::Time last_sync_update_time_ = rclcpp::Time(0, 0, RCL_CLOCK_UNINITIALIZED);
+  // DETACHED and SELF_PACED controllers run update() in an own loop of the async thread
+  bool has_own_update_loop_ = false;
+  // true while the own loop is in update()
+  std::atomic_bool loop_update_in_progress_ = false;
 };
+
+namespace
+{
+/// Set a flag for the lifetime of the object (also when an exception is thrown).
+class ScopedFlag
+{
+public:
+  explicit ScopedFlag(std::atomic_bool & flag) : flag_(flag) { flag_.store(true); }
+  ~ScopedFlag() { flag_.store(false); }
+  ScopedFlag(const ScopedFlag &) = delete;
+  ScopedFlag & operator=(const ScopedFlag &) = delete;
+
+private:
+  std::atomic_bool & flag_;
+};
+}  // namespace
 
 ControllerInterfaceBase::ControllerInterfaceBase()
 : impl_(std::make_unique<ControllerInterfaceBaseImpl>())
@@ -320,6 +343,9 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
       get_node()->get_logger(), "Starting async handler with scheduler priority: %d",
       async_params.thread_priority);
     impl_->async_handler_ = std::make_unique<realtime_tools::AsyncFunctionHandler<return_type>>();
+    impl_->has_own_update_loop_ =
+      async_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SELF_PACED ||
+      async_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::DETACHED;
 
     if (async_params.scheduling_policy == realtime_tools::AsyncSchedulingPolicy::SELF_PACED)
     {
@@ -353,6 +379,7 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
 
           // The loop of the async thread runs also when the controller is not active. Do not call
           // update() then: on_activate() and on_deactivate() change the interfaces.
+          ScopedFlag update_in_progress(impl_->loop_update_in_progress_);
           if (!is_async_update_allowed())
           {
             if (impl_->hardware_sync_signal_)
@@ -406,6 +433,7 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
         [this](const rclcpp::Time & time, const rclcpp::Duration & period)
         {
           // The DETACHED loop runs also when the controller is not active.
+          ScopedFlag update_in_progress(impl_->loop_update_in_progress_);
           if (!is_async_update_allowed())
           {
             return return_type::OK;
@@ -567,13 +595,25 @@ void ControllerInterfaceBase::wait_for_trigger_update_to_finish()
 {
   if (is_async() && impl_->async_handler_ && impl_->async_handler_->is_running())
   {
-    impl_->async_handler_->wait_for_trigger_cycle_to_finish();
+    if (impl_->has_own_update_loop_)
+    {
+      // The own loop holds the mutex of the async handler most of the time (also while it waits
+      // for the hardware). A lock of this mutex can wait for many seconds. Wait for the flag.
+      while (impl_->loop_update_in_progress_.load())
+      {
+        std::this_thread::sleep_for(std::chrono::microseconds(50));
+      }
+    }
+    else
+    {
+      impl_->async_handler_->wait_for_trigger_cycle_to_finish();
+    }
   }
 }
 
 void ControllerInterfaceBase::prepare_for_deactivation()
 {
-  impl_->skip_async_triggers_.store(true, std::memory_order_release);
+  impl_->skip_async_triggers_.store(true);
   this->wait_for_trigger_update_to_finish();
 }
 
@@ -593,7 +633,8 @@ bool ControllerInterfaceBase::is_async_update_allowed() const
 {
   // prepare_for_deactivation() sets skip_async_triggers_ before on_deactivate(). The state is
   // ACTIVE only after on_activate() returned.
-  return !impl_->skip_async_triggers_.load(std::memory_order_acquire) &&
+  // Sequentially consistent with the store in prepare_for_deactivation() and the update flag.
+  return !impl_->skip_async_triggers_.load() &&
          get_lifecycle_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
 }
 
