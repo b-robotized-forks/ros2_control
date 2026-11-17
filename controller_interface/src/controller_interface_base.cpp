@@ -364,6 +364,17 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
               static_cast<double>(now - static_cast<int64_t>(last_signal_time)) / 1000.0;
           }
 
+          // The loop of the async thread runs also when the controller is not active. Do not call
+          // update() then: on_activate() and on_deactivate() change the interfaces.
+          if (!is_async_update_allowed())
+          {
+            if (impl_->hardware_sync_signal_)
+            {
+              impl_->hardware_sync_signal_->signal_update_finished();
+            }
+            return return_type::OK;
+          }
+
           // The async handler takes time and period before the wait for the hardware. A wait that
           // times out loses its period. Take time and period after the wait.
           rclcpp::Time update_time = time;
@@ -405,8 +416,15 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
     else
     {
       impl_->async_handler_->init(
-        std::bind(
-          &ControllerInterfaceBase::update, this, std::placeholders::_1, std::placeholders::_2),
+        [this](const rclcpp::Time & time, const rclcpp::Duration & period)
+        {
+          // The DETACHED loop runs also when the controller is not active.
+          if (!is_async_update_allowed())
+          {
+            return return_type::OK;
+          }
+          return this->update(time, period);
+        },
         async_params);
     }
 
@@ -582,6 +600,14 @@ void ControllerInterfaceBase::stop_async_handler_thread()
     }
     impl_->async_handler_->stop_thread();
   }
+}
+
+bool ControllerInterfaceBase::is_async_update_allowed() const
+{
+  // prepare_for_deactivation() sets skip_async_triggers_ before on_deactivate(). The state is
+  // ACTIVE only after on_activate() returned.
+  return !impl_->skip_async_triggers_.load(std::memory_order_acquire) &&
+         get_lifecycle_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
 }
 
 bool ControllerInterfaceBase::is_self_paced() const
