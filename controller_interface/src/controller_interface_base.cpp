@@ -36,6 +36,8 @@ struct ControllerInterfaceBase::ControllerInterfaceBaseImpl
   std::shared_ptr<realtime_tools::SyncSignal> hardware_sync_signal_;
   uint64_t sync_triggers_ = 0;
   double sync_latency_us_ = 0.0;
+  // time of the last update() of a self-paced controller
+  rclcpp::Time last_sync_update_time_ = rclcpp::Time(0, 0, RCL_CLOCK_UNINITIALIZED);
 };
 
 ControllerInterfaceBase::ControllerInterfaceBase()
@@ -334,10 +336,24 @@ const rclcpp_lifecycle::State & ControllerInterfaceBase::configure()
               static_cast<double>(now - static_cast<int64_t>(last_signal_time)) / 1000.0;
           }
 
+          // The async handler takes time and period before the wait for the hardware. A wait that
+          // times out loses its period. Take time and period after the wait.
+          rclcpp::Time update_time = time;
+          rclcpp::Duration update_period = period;
+          if (impl_->hardware_sync_signal_)
+          {
+            update_time = impl_->ctrl_itf_params_.clock->now();
+            if (impl_->last_sync_update_time_.get_clock_type() == update_time.get_clock_type())
+            {
+              update_period = update_time - impl_->last_sync_update_time_;
+            }
+            impl_->last_sync_update_time_ = update_time;
+          }
+
           // call signal_update_finished() even if update() throws.
           try
           {
-            auto result = this->update(time, period);
+            auto result = this->update(update_time, update_period);
             if (impl_->hardware_sync_signal_)
             {
               impl_->hardware_sync_signal_->signal_update_finished();
