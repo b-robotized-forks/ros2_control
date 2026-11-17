@@ -614,7 +614,8 @@ public:
   void enable_introspection(bool enable);
 
   /**
-   * Getter for the synchronization signal of async self-paced hardware interface.
+   * Getter for the synchronization signal of an async hardware component with the
+   * 'self_paced' or 'detached' scheduling policy.
    * Used when we want to ensure async controller update() is executer after its
    * corresponding hardware interface.
    */
