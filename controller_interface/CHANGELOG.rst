@@ -2,6 +2,29 @@
 Changelog for package controller_interface
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+4.50.0 (2026-11-02)
+-------------------
+* Fix GPS status values when state-interface reads fail (backport `#3660 <https://github.com/ros-controls/ros2_control/issues/3660>`_) (`#3706 <https://github.com/ros-controls/ros2_control/issues/3706>`_)
+* Include what you use/review (backport `#3696 <https://github.com/ros-controls/ros2_control/issues/3696>`_) (`#3704 <https://github.com/ros-controls/ros2_control/issues/3704>`_)
+* fix(FTS): shutdown race with interfaces (`#3492 <https://github.com/ros-controls/ros2_control/issues/3492>`_) (`#3678 <https://github.com/ros-controls/ros2_control/issues/3678>`_)
+* Contributors: mergify[bot]
+
+4.49.0 (2026-10-05)
+-------------------
+
+4.48.1 (2026-09-08)
+-------------------
+
+4.48.0 (2026-09-02)
+-------------------
+
+4.47.0 (2026-08-10)
+-------------------
+* Add RangeSensor unit coverage (`#3522 <https://github.com/ros-controls/ros2_control/issues/3522>`_) (`#3528 <https://github.com/ros-controls/ros2_control/issues/3528>`_)
+* Document realtime-safe methods (`#3392 <https://github.com/ros-controls/ros2_control/issues/3392>`_) (`#3507 <https://github.com/ros-controls/ros2_control/issues/3507>`_)
+* Fix merge conflict in docstring (`#3441 <https://github.com/ros-controls/ros2_control/issues/3441>`_)
+* Contributors: Christoph Fröhlich, mergify[bot]
+
 4.46.0 (2026-07-01)
 -------------------
 * Improve docstring of the semantic_components for consistency (`#3338 <https://github.com/ros-controls/ros2_control/issues/3338>`_) (`#3421 <https://github.com/ros-controls/ros2_control/issues/3421>`_)

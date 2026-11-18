@@ -2,6 +2,29 @@
 Changelog for package joint_limits
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+4.50.0 (2026-11-02)
+-------------------
+* Include what you use/review (backport `#3696 <https://github.com/ros-controls/ros2_control/issues/3696>`_) (`#3704 <https://github.com/ros-controls/ros2_control/issues/3704>`_)
+* Fix joint limit update reporting via ros parameter updates (`#3664 <https://github.com/ros-controls/ros2_control/issues/3664>`_) (`#3686 <https://github.com/ros-controls/ros2_control/issues/3686>`_)
+* Contributors: mergify[bot]
+
+4.49.0 (2026-10-05)
+-------------------
+* [joint_limits] Fix the changed flag over the whole parameter batch (`#3576 <https://github.com/ros-controls/ros2_control/issues/3576>`_) (`#3661 <https://github.com/ros-controls/ros2_control/issues/3661>`_)
+* Replace RT buffer with realtime thread safe box (`#3633 <https://github.com/ros-controls/ros2_control/issues/3633>`_) (`#3652 <https://github.com/ros-controls/ros2_control/issues/3652>`_)
+* Contributors: mergify[bot]
+
+4.48.1 (2026-09-08)
+-------------------
+
+4.48.0 (2026-09-02)
+-------------------
+
+4.47.0 (2026-08-10)
+-------------------
+* Fix joint limits namespace wording (`#3445 <https://github.com/ros-controls/ros2_control/issues/3445>`_) (`#3447 <https://github.com/ros-controls/ros2_control/issues/3447>`_)
+* Contributors: mergify[bot]
+
 4.46.0 (2026-07-01)
 -------------------
 * Fix disable velocity and effort limiting feature (`#3425 <https://github.com/ros-controls/ros2_control/issues/3425>`_) (`#3436 <https://github.com/ros-controls/ros2_control/issues/3436>`_)

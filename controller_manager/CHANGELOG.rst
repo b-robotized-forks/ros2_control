@@ -2,6 +2,50 @@
 Changelog for package controller_manager
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+4.50.0 (2026-11-02)
+-------------------
+* refactor: replace deprecated ros2param API with native rclpy parameter clients (`#3210 <https://github.com/ros-controls/ros2_control/issues/3210>`_) (`#3742 <https://github.com/ros-controls/ros2_control/issues/3742>`_)
+* fix(spawner): Allow empty arguments and add regression tests (`#3710 <https://github.com/ros-controls/ros2_control/issues/3710>`_) (`#3730 <https://github.com/ros-controls/ros2_control/issues/3730>`_)
+* Improve robustness of spawner tests (`#3541 <https://github.com/ros-controls/ros2_control/issues/3541>`_) (`#3712 <https://github.com/ros-controls/ros2_control/issues/3712>`_)
+* Fix SIGINT propagation to spawner by dropping shell=True in launch_utils (`#3682 <https://github.com/ros-controls/ros2_control/issues/3682>`_) (`#3708 <https://github.com/ros-controls/ros2_control/issues/3708>`_)
+* Include what you use/review (backport `#3696 <https://github.com/ros-controls/ros2_control/issues/3696>`_) (`#3704 <https://github.com/ros-controls/ros2_control/issues/3704>`_)
+* Add <numeric> for std::accumulate (`#3677 <https://github.com/ros-controls/ros2_control/issues/3677>`_) (`#3680 <https://github.com/ros-controls/ros2_control/issues/3680>`_)
+* Contributors: mergify[bot]
+
+4.49.0 (2026-10-05)
+-------------------
+* Replace RT buffer with realtime thread safe box (`#3633 <https://github.com/ros-controls/ros2_control/issues/3633>`_) (`#3652 <https://github.com/ros-controls/ros2_control/issues/3652>`_)
+* docs(controller_manager): drop misadvised 'priority 99' limits (`#3640 <https://github.com/ros-controls/ros2_control/issues/3640>`_) (`#3650 <https://github.com/ros-controls/ros2_control/issues/3650>`_)
+* Robustify CM tests on CI (`#3542 <https://github.com/ros-controls/ros2_control/issues/3542>`_) (`#3626 <https://github.com/ros-controls/ros2_control/issues/3626>`_)
+* Fix data race in overrun warning parameter (`#3619 <https://github.com/ros-controls/ros2_control/issues/3619>`_) (`#3621 <https://github.com/ros-controls/ros2_control/issues/3621>`_)
+* Contributors: mergify[bot]
+
+4.48.1 (2026-09-08)
+-------------------
+* Add test_depend on launch_testing_ament_cmake to controller_manager (`#3595 <https://github.com/ros-controls/ros2_control/issues/3595>`_) (`#3598 <https://github.com/ros-controls/ros2_control/issues/3598>`_)
+* Contributors: mergify[bot]
+
+4.48.0 (2026-09-02)
+-------------------
+* Fix a few typos (`#3567 <https://github.com/ros-controls/ros2_control/issues/3567>`_) (`#3568 <https://github.com/ros-controls/ros2_control/issues/3568>`_)
+* Publish controller_manager activity on cleanup_controller (`#3561 <https://github.com/ros-controls/ros2_control/issues/3561>`_) (`#3563 <https://github.com/ros-controls/ros2_control/issues/3563>`_)
+* docs: Add documentation for utility scripts in controller_manager (`#3175 <https://github.com/ros-controls/ros2_control/issues/3175>`_) (`#3550 <https://github.com/ros-controls/ros2_control/issues/3550>`_)
+* Add test for --unload-on-kill spawner lock behavior (`#3035 <https://github.com/ros-controls/ros2_control/issues/3035>`_) (`#3539 <https://github.com/ros-controls/ros2_control/issues/3539>`_)
+* Relax assertions w.r.t. timing on CI runners (`#3535 <https://github.com/ros-controls/ros2_control/issues/3535>`_) (`#3537 <https://github.com/ros-controls/ros2_control/issues/3537>`_)
+* Contributors: mergify[bot]
+
+4.47.0 (2026-08-10)
+-------------------
+* Refactor launch test to use launch substitutions instead of os (`#3142 <https://github.com/ros-controls/ros2_control/issues/3142>`_) (`#3524 <https://github.com/ros-controls/ros2_control/issues/3524>`_)
+* doc: reorder ros2_control TOC (backport `#3478 <https://github.com/ros-controls/ros2_control/issues/3478>`_) (`#3516 <https://github.com/ros-controls/ros2_control/issues/3516>`_)
+* Add tests for launch_utils of controller manager (`#2768 <https://github.com/ros-controls/ros2_control/issues/2768>`_) (`#3510 <https://github.com/ros-controls/ros2_control/issues/3510>`_)
+* Create spawner logger before lock-result is logged (backport `#3462 <https://github.com/ros-controls/ros2_control/issues/3462>`_) (`#3505 <https://github.com/ros-controls/ros2_control/issues/3505>`_)
+* Controller Manager recovery from invalid URDF errors (backport `#2775 <https://github.com/ros-controls/ros2_control/issues/2775>`_) (`#3394 <https://github.com/ros-controls/ros2_control/issues/3394>`_)
+* Add cmath for windows build (`#3496 <https://github.com/ros-controls/ros2_control/issues/3496>`_)
+* Guard controller update rate against modulo-by-zero UB (`#3454 <https://github.com/ros-controls/ros2_control/issues/3454>`_) (`#3476 <https://github.com/ros-controls/ros2_control/issues/3476>`_)
+* Make sleep in ros2_control node optional (backport `#3213 <https://github.com/ros-controls/ros2_control/issues/3213>`_) (`#3452 <https://github.com/ros-controls/ros2_control/issues/3452>`_)
+* Contributors: Christoph Fröhlich, mergify[bot]
+
 4.46.0 (2026-07-01)
 -------------------
 * Unload controller upon sigterm (`#3406 <https://github.com/ros-controls/ros2_control/issues/3406>`_) (`#3427 <https://github.com/ros-controls/ros2_control/issues/3427>`_)

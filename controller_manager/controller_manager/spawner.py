@@ -394,7 +394,6 @@ def main(args=None):
 
     spawner_ros_params_files = get_ros_params_files(sys.argv[1:])
 
-    # Remove ROS args
     command_line_args = rclpy.utilities.remove_ros_args(args=sys.argv)[1:]
 
     # Check if we are in advanced mode
@@ -490,14 +489,18 @@ def main(args=None):
             )
             return 1
 
+        # Create the node once the lock is acquired, so that all subsequent log
+        # messages are published to /rosout with the node's actual (possibly
+        # remapped) name. The node is created after the lock to keep node
+        # creation serialized between concurrent spawners.
+        node = Node(spawner_node_name)
+        logger = node.get_logger()
+
         # print only once when the lock is finally acquired, but with info level if it failed once
         if hit_timeout:
             logger.info(bcolors.OKGREEN + "Spawner lock acquired!" + bcolors.ENDC)
         else:
             logger.debug(bcolors.OKGREEN + "Spawner lock acquired!" + bcolors.ENDC)
-
-        node = Node(spawner_node_name)
-        logger = node.get_logger()
 
         if node.get_namespace() != "/" and global_args.namespace:
             raise RuntimeError(
