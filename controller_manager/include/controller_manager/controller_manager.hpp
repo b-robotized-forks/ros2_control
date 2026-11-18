@@ -356,6 +356,10 @@ protected:
   std::unique_ptr<LifecycleNodeFacade> lifecycle_node_facade_;
   LifecycleCallbackReturn configure();
   void init_services();
+
+  /// Run the parts of update() that are slow on their first call, before update() runs in the
+  /// realtime loop. Call it in the non-realtime thread while the controller manager is unconfigured.
+  void warm_up_update_path();
   void reset_services();
 
   rclcpp::Publisher<lifecycle_msgs::msg::TransitionEvent>::SharedPtr controller_manager_transition_event_publisher_;
@@ -850,6 +854,8 @@ private:
     double switch_perform_mode_time = 0.0;
     double deactivation_time = 0.0;
     double activation_time = 0.0;
+    double command_limits_time = 0.0;
+    double introspection_time = 0.0;
   };
 
   ControllerManagerExecutionTime execution_time_;
