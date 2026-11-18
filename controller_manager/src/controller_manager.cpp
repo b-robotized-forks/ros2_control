@@ -3877,7 +3877,11 @@ controller_interface::return_type ControllerManager::update(
     // To publish the activity of the failing controllers and the fallback controllers
     publish_activity();
   }
+  const auto limits_start_time = std::chrono::steady_clock::now();
   resource_manager_->enforce_command_limits(period);
+  execution_time_.command_limits_time =
+    std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - limits_start_time)
+      .count();
 
   // there are controllers to (de)activate
   if (switch_params_.do_switch)
@@ -3892,7 +3896,11 @@ controller_interface::return_type ControllerManager::update(
     }
   }
 
+  const auto introspection_start_time = std::chrono::steady_clock::now();
   PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::DEFAULT_REGISTRY_KEY);
+  execution_time_.introspection_time = std::chrono::duration<double, std::micro>(
+                                         std::chrono::steady_clock::now() - introspection_start_time)
+                                         .count();
 
   execution_time_.update_time =
     std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start_time)
@@ -4005,11 +4013,13 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000,
         "Overrun might occur, Total time : %.3f us (Expected < %.3f us) --> Read time : %.3f us, "
-        "Update time : %.3f us (Switch time : %.3f us (Switch chained mode time : %.3f us, perform "
+        "Update time : %.3f us (Command limits time : %.3f us, Introspection time : %.3f us, "
+        "Switch time : %.3f us (Switch chained mode time : %.3f us, perform "
         "mode change time : %.3f us, Activation time : %.3f us, Deactivation time : %.3f us)), "
         "Write time : %.3f us",
         execution_time_.total_time, expected_cycle_time, execution_time_.read_time,
-        execution_time_.update_time, execution_time_.switch_time,
+        execution_time_.update_time, execution_time_.command_limits_time,
+        execution_time_.introspection_time, execution_time_.switch_time,
         execution_time_.switch_chained_mode_time, execution_time_.switch_perform_mode_time,
         execution_time_.activation_time, execution_time_.deactivation_time,
         execution_time_.write_time);
@@ -4019,9 +4029,11 @@ void ControllerManager::write(const rclcpp::Time & time, const rclcpp::Duration 
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000,
         "Overrun might occur, Total time : %.3f us (Expected < %.3f us) --> Read time : %.3f us, "
-        "Update time : %.3f us, Write time : %.3f us",
+        "Update time : %.3f us (Command limits time : %.3f us, Introspection time : %.3f us), "
+        "Write time : %.3f us",
         execution_time_.total_time, expected_cycle_time, execution_time_.read_time,
-        execution_time_.update_time, execution_time_.write_time);
+        execution_time_.update_time, execution_time_.command_limits_time,
+        execution_time_.introspection_time, execution_time_.write_time);
     }
   }
 
@@ -5457,6 +5469,23 @@ lifecycle_msgs::msg::Transition lifecycle_get_transition_message(
   return transition;
 }
 
+void ControllerManager::warm_up_update_path()
+{
+  if (!is_resource_manager_initialized())
+  {
+    return;
+  }
+  const auto start_time = std::chrono::steady_clock::now();
+  resource_manager_->enforce_command_limits(
+    rclcpp::Duration::from_seconds(1.0 / static_cast<double>(update_rate_)));
+  PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::DEFAULT_REGISTRY_KEY);
+  PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::CM_STATISTICS_KEY);
+  RCLCPP_INFO(
+    get_logger(), "Warm-up of the update path took %.3f us.",
+    std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start_time)
+      .count());
+}
+
 // -- PUBLIC LIFECYCLE API --
 void ControllerManager::lifecycle_allow_inactive(bool allow)
 {
@@ -5684,6 +5713,7 @@ LifecycleCallbackReturn ControllerManagerStateMachine::on_configure(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
   cm_->init_services();
+  cm_->warm_up_update_path();
   RCLCPP_INFO(cm_->get_logger(), "Configuration successful.");
   current_state_id_ = lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
   return LifecycleCallbackReturn::SUCCESS;
