@@ -19,6 +19,7 @@
 #include <unordered_map>
 
 #include "joint_limits/joint_limits.hpp"
+#include "rclcpp/clock.hpp"
 #include "rclcpp/node_options.hpp"
 
 /**
