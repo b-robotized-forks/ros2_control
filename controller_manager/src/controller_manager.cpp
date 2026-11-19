@@ -661,12 +661,12 @@ bool ControllerManager::shutdown_controllers()
   RCLCPP_INFO(get_logger(), "Shutting down all controllers in the controller manager.");
   bool ctrls_shutdown_status = true;
   std::vector<std::string> loaded_controllers = get_controller_names();
-  
+
   // Decativate any active controllers
   {
     std::lock_guard<std::recursive_mutex> guard(rt_controllers_wrapper_.controllers_lock_);
     std::vector<ControllerSpec> controllers_list = rt_controllers_wrapper_.get_updated_list(guard);
-    
+
     for (auto & controller : controllers_list)
     {
       if (is_controller_active(controller.c))
@@ -703,7 +703,7 @@ LifecycleCallbackReturn ControllerManager::configure()
   controller_manager_activity_publisher_ =
     create_publisher<controller_manager_msgs::msg::ControllerManagerActivity>(
       "~/activity", rclcpp::QoS(1).reliable().transient_local());
-  controller_manager_transition_event_publisher_ = 
+  controller_manager_transition_event_publisher_ =
     create_publisher<lifecycle_msgs::msg::TransitionEvent>(
       "~/transition_event", rclcpp::QoS(1).reliable().transient_local());
 
@@ -728,7 +728,7 @@ LifecycleCallbackReturn ControllerManager::configure()
   RCLCPP_INFO(
     get_logger(), "Published runtime_config_prefix_path on topic '%s'",
     runtime_config_prefix_path_publisher_->get_topic_name());
-  
+
   // Setup diagnostics
   periodicity_stats_.reset();
   diagnostics_updater_.setHardwareID("ros2_control");
@@ -740,12 +740,12 @@ LifecycleCallbackReturn ControllerManager::configure()
   diagnostics_updater_.add(
     "Controller Manager Activity", this,
     &ControllerManager::controller_manager_diagnostic_callback);
-  
+
   INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
     this, hardware_interface::DEFAULT_INTROSPECTION_TOPIC,
     hardware_interface::DEFAULT_REGISTRY_KEY);
   START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::DEFAULT_REGISTRY_KEY);
-  
+
   INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
     this, hardware_interface::CM_STATISTICS_TOPIC, hardware_interface::CM_STATISTICS_KEY);
   START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::CM_STATISTICS_KEY);
@@ -758,7 +758,7 @@ LifecycleCallbackReturn ControllerManager::configure()
       { this->lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED); }));
 
   RCLCPP_INFO_EXPRESSION(
-    get_logger(), params_->enforce_command_limits, "Enforcing command limits is enabled..."); 
+    get_logger(), params_->enforce_command_limits, "Enforcing command limits is enabled...");
 
   if (is_resource_manager_initialized())
   {
@@ -870,18 +870,18 @@ void ControllerManager::robot_description_callback(const std_msgs::msg::String &
     // state
     RCLCPP_WARN(
       get_logger(),
-      "Resource Manager failed to configure after receiving robot description. Reinstantiating resource manager...");
+      "Resource Manager failed to configure after receiving robot description. Reinstantiating "
+      "resource manager...");
     resource_manager_.reset();
     return;
   }
 
   set_initial_hardware_components_state();
-  
+
   RCLCPP_INFO(
     get_logger(),
     "Resource Manager has been successfully initialized. Starting Controller Manager "
     "services...");
-
 
   lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
 }
@@ -902,7 +902,7 @@ void ControllerManager::init_resource_manager(const std::string & robot_descript
     params_->defaults.deactivate_controllers_on_hardware_self_deactivate;
   params.handle_exceptions = params_->handle_exceptions;
   params.components_to_not_load = params_->hardware_components_initial_state.not_loaded;
-  
+
   if (resource_manager_ == nullptr)
   {
     resource_manager_ = std::make_unique<hardware_interface::ResourceManager>(params, false);
@@ -968,7 +968,8 @@ void ControllerManager::set_initial_hardware_components_state()
   auto components_to_activate = resource_manager_->get_components_status();
 
   // force all hardware as unconfigured at start
-  for (const auto & [component_name, _] : components_to_activate) {
+  for (const auto & [component_name, _] : components_to_activate)
+  {
     params_->hardware_components_initial_state.unconfigured.push_back(component_name);
   }
 
@@ -1248,23 +1249,28 @@ void ControllerManager::init_services()
   // the executor (see issue #260).
   // deterministic_callback_group_ = create_callback_group(
   //   rclcpp::CallbackGroupType::MutuallyExclusive);
-  if (!best_effort_callback_group_) {
-    best_effort_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  if (!best_effort_callback_group_)
+  {
+    best_effort_callback_group_ =
+      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   }
 
-  if (lifecycle_node_facade_) {
+  if (lifecycle_node_facade_)
+  {
     lifecycle_node_facade_->init_services(best_effort_callback_group_);
   }
 
   using namespace std::placeholders;
 
-  if (!list_controllers_service_) {
+  if (!list_controllers_service_)
+  {
     list_controllers_service_ = create_service<controller_manager_msgs::srv::ListControllers>(
       "~/list_controllers", std::bind(&ControllerManager::list_controllers_srv_cb, this, _1, _2),
       qos_services, best_effort_callback_group_);
   }
 
-  if (!list_controller_types_service_) {
+  if (!list_controller_types_service_)
+  {
     list_controller_types_service_ =
       create_service<controller_manager_msgs::srv::ListControllerTypes>(
         "~/list_controller_types",
@@ -1272,20 +1278,24 @@ void ControllerManager::init_services()
         best_effort_callback_group_);
   }
 
-  if (!load_controller_service_) {
+  if (!load_controller_service_)
+  {
     load_controller_service_ = create_service<controller_manager_msgs::srv::LoadController>(
       "~/load_controller", std::bind(&ControllerManager::load_controller_service_cb, this, _1, _2),
       qos_services, best_effort_callback_group_);
   }
 
-  if (!configure_controller_service_) {
-    configure_controller_service_ = create_service<controller_manager_msgs::srv::ConfigureController>(
-      "~/configure_controller",
-      std::bind(&ControllerManager::configure_controller_service_cb, this, _1, _2), qos_services,
-      best_effort_callback_group_);
+  if (!configure_controller_service_)
+  {
+    configure_controller_service_ =
+      create_service<controller_manager_msgs::srv::ConfigureController>(
+        "~/configure_controller",
+        std::bind(&ControllerManager::configure_controller_service_cb, this, _1, _2), qos_services,
+        best_effort_callback_group_);
   }
 
-  if (!reload_controller_libraries_service_) {
+  if (!reload_controller_libraries_service_)
+  {
     reload_controller_libraries_service_ =
       create_service<controller_manager_msgs::srv::ReloadControllerLibraries>(
         "~/reload_controller_libraries",
@@ -1293,28 +1303,32 @@ void ControllerManager::init_services()
         qos_services, best_effort_callback_group_);
   }
 
-  if (!switch_controller_service_) {
+  if (!switch_controller_service_)
+  {
     switch_controller_service_ = create_service<controller_manager_msgs::srv::SwitchController>(
       "~/switch_controller",
       std::bind(&ControllerManager::switch_controller_service_cb, this, _1, _2), qos_services,
       best_effort_callback_group_);
   }
 
-  if (!unload_controller_service_) {
+  if (!unload_controller_service_)
+  {
     unload_controller_service_ = create_service<controller_manager_msgs::srv::UnloadController>(
       "~/unload_controller",
       std::bind(&ControllerManager::unload_controller_service_cb, this, _1, _2), qos_services,
       best_effort_callback_group_);
   }
 
-  if (!cleanup_controller_service_) {
+  if (!cleanup_controller_service_)
+  {
     cleanup_controller_service_ = create_service<controller_manager_msgs::srv::CleanupController>(
       "~/cleanup_controller",
       std::bind(&ControllerManager::cleanup_controller_service_cb, this, _1, _2), qos_services,
       best_effort_callback_group_);
   }
 
-  if (!list_hardware_components_service_) {
+  if (!list_hardware_components_service_)
+  {
     list_hardware_components_service_ =
       create_service<controller_manager_msgs::srv::ListHardwareComponents>(
         "~/list_hardware_components",
@@ -1322,7 +1336,8 @@ void ControllerManager::init_services()
         best_effort_callback_group_);
   }
 
-  if (!list_hardware_interfaces_service_) {
+  if (!list_hardware_interfaces_service_)
+  {
     list_hardware_interfaces_service_ =
       create_service<controller_manager_msgs::srv::ListHardwareInterfaces>(
         "~/list_hardware_interfaces",
@@ -1330,44 +1345,49 @@ void ControllerManager::init_services()
         best_effort_callback_group_);
   }
 
-  if (!set_hardware_component_state_service_) {
+  if (!set_hardware_component_state_service_)
+  {
     set_hardware_component_state_service_ =
       create_service<controller_manager_msgs::srv::SetHardwareComponentState>(
         "~/set_hardware_component_state",
         std::bind(&ControllerManager::set_hardware_component_state_srv_cb, this, _1, _2),
         qos_services, best_effort_callback_group_);
   }
-  if (!cm_statistics_registered_) {
+  if (!cm_statistics_registered_)
+  {
     const std::string cm_name = get_name();
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".update_time", &execution_time_.update_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".update_time",
+      &execution_time_.update_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".read_time", &execution_time_.read_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".read_time", &execution_time_.read_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".write_time", &execution_time_.write_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".write_time", &execution_time_.write_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".total_time", &execution_time_.total_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".total_time", &execution_time_.total_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_time", &execution_time_.switch_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_time",
+      &execution_time_.switch_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_chained_mode_time",
-        &execution_time_.switch_chained_mode_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_chained_mode_time",
+      &execution_time_.switch_chained_mode_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_perform_mode_time",
-        &execution_time_.switch_perform_mode_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".switch_perform_mode_time",
+      &execution_time_.switch_perform_mode_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".deactivation_time",
-        &execution_time_.deactivation_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".deactivation_time",
+      &execution_time_.deactivation_time);
     REGISTER_ENTITY(
-        hardware_interface::CM_STATISTICS_KEY, cm_name + ".activation_time",
-        &execution_time_.activation_time);
+      hardware_interface::CM_STATISTICS_KEY, cm_name + ".activation_time",
+      &execution_time_.activation_time);
     cm_statistics_registered_ = true;
   }
 }
 
 void ControllerManager::reset_services()
 {
-  if (lifecycle_node_facade_) {
+  if (lifecycle_node_facade_)
+  {
     lifecycle_node_facade_->reset_services();
   }
   list_controllers_service_.reset();
@@ -1497,8 +1517,7 @@ controller_interface::ControllerInterfaceBaseSharedPtr ControllerManager::load_c
 
       std::transform(
         controller_spec.info.parameters_files.begin(), controller_spec.info.parameters_files.end(),
-        controller_spec.info.parameters_files.begin(),
-        [this](const std::string & param_file_path)
+        controller_spec.info.parameters_files.begin(), [this](const std::string & param_file_path)
         { return resolve_parameters_file_path(param_file_path); });
     }
     else if (params_files_parameter.get_type() == rclcpp::ParameterType::PARAMETER_STRING)
@@ -2674,21 +2693,24 @@ controller_interface::return_type ControllerManager::switch_controller_cb(
 
   if (any_commander_controller_active())
   {
-    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE && !state_machine_->is_transitioning())
+    if (
+      state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE &&
+      !state_machine_->is_transitioning())
     {
-        lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+      lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
     }
   }
   else
   {
-    // allow_active_ == true means this is a standard controller deactivation, so we fall back to INACTIVE.
-    // allow_active_ == false means active state is already globally disabled, so no auto-transition is needed.
-    // !is_transitioning() ensures we don't trigger a recursive loop if switch_controller was called from inside on_deactivate().
-    if (state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE 
-        && allow_active_
-        && !state_machine_->is_transitioning())
+    // allow_active_ == true means this is a standard controller deactivation, so we fall back to
+    // INACTIVE. allow_active_ == false means active state is already globally disabled, so no
+    // auto-transition is needed. !is_transitioning() ensures we don't trigger a recursive loop if
+    // switch_controller was called from inside on_deactivate().
+    if (
+      state_machine_->get_state_id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE &&
+      allow_active_ && !state_machine_->is_transitioning())
     {
-        lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+      lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     }
   }
 
@@ -4064,6 +4086,11 @@ void ControllerManager::RTControllerListWrapper::set_on_switch_callback(
   on_switch_callback_ = callback;
 }
 
+void ControllerManager::RTControllerListWrapper::release_used_by_rt_list()
+{
+  used_by_realtime_controllers_index_ = -1;
+}
+
 int ControllerManager::RTControllerListWrapper::get_other_list(int index) const
 {
   return (index + 1) % 2;
@@ -5372,7 +5399,8 @@ std::string lifecycle_state_to_string(uint8_t state_id)
   }
 }
 
-lifecycle_msgs::msg::Transition lifecycle_get_transition_message(uint8_t initial_state, uint8_t new_state)
+lifecycle_msgs::msg::Transition lifecycle_get_transition_message(
+  uint8_t initial_state, uint8_t new_state)
 {
   lifecycle_msgs::msg::Transition transition;
   transition.id = 0;
@@ -5381,26 +5409,46 @@ lifecycle_msgs::msg::Transition lifecycle_get_transition_message(uint8_t initial
   using lifecycle_msgs::msg::State;
   using lifecycle_msgs::msg::Transition;
 
-  if (initial_state == State::PRIMARY_STATE_UNCONFIGURED && new_state == State::PRIMARY_STATE_INACTIVE) {
+  if (
+    initial_state == State::PRIMARY_STATE_UNCONFIGURED &&
+    new_state == State::PRIMARY_STATE_INACTIVE)
+  {
     transition.id = Transition::TRANSITION_CONFIGURE;
     transition.label = "configure";
-  } else if (initial_state == State::PRIMARY_STATE_INACTIVE && new_state == State::PRIMARY_STATE_ACTIVE) {
+  }
+  else if (
+    initial_state == State::PRIMARY_STATE_INACTIVE && new_state == State::PRIMARY_STATE_ACTIVE)
+  {
     transition.id = Transition::TRANSITION_ACTIVATE;
     transition.label = "activate";
-  } else if (initial_state == State::PRIMARY_STATE_ACTIVE && new_state == State::PRIMARY_STATE_INACTIVE) {
+  }
+  else if (
+    initial_state == State::PRIMARY_STATE_ACTIVE && new_state == State::PRIMARY_STATE_INACTIVE)
+  {
     transition.id = Transition::TRANSITION_DEACTIVATE;
     transition.label = "deactivate";
-  } else if (initial_state == State::PRIMARY_STATE_INACTIVE && new_state == State::PRIMARY_STATE_UNCONFIGURED) {
+  }
+  else if (
+    initial_state == State::PRIMARY_STATE_INACTIVE &&
+    new_state == State::PRIMARY_STATE_UNCONFIGURED)
+  {
     transition.id = Transition::TRANSITION_CLEANUP;
     transition.label = "cleanup";
-  } else if (new_state == State::PRIMARY_STATE_FINALIZED) {
-    if (initial_state == State::PRIMARY_STATE_UNCONFIGURED) {
+  }
+  else if (new_state == State::PRIMARY_STATE_FINALIZED)
+  {
+    if (initial_state == State::PRIMARY_STATE_UNCONFIGURED)
+    {
       transition.id = Transition::TRANSITION_UNCONFIGURED_SHUTDOWN;
       transition.label = "shutdown";
-    } else if (initial_state == State::PRIMARY_STATE_INACTIVE) {
+    }
+    else if (initial_state == State::PRIMARY_STATE_INACTIVE)
+    {
       transition.id = Transition::TRANSITION_INACTIVE_SHUTDOWN;
       transition.label = "shutdown";
-    } else if (initial_state == State::PRIMARY_STATE_ACTIVE) {
+    }
+    else if (initial_state == State::PRIMARY_STATE_ACTIVE)
+    {
       transition.id = Transition::TRANSITION_ACTIVE_SHUTDOWN;
       transition.label = "shutdown";
     }
@@ -5443,6 +5491,12 @@ void ControllerManager::shutdown()
     lifecycle_transition_to(lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
   }
 }
+
+void ControllerManager::realtime_loop_stopped()
+{
+  RCLCPP_INFO(get_logger(), "Realtime loop stopped. Controller list changes do not wait for it.");
+  rt_controllers_wrapper_.release_used_by_rt_list();
+}
 // -- end PUBLIC LIFECYCLE API --
 
 bool ControllerManagerStateMachine::is_transition_valid(uint8_t target_state_id)
@@ -5452,8 +5506,9 @@ bool ControllerManagerStateMachine::is_transition_valid(uint8_t target_state_id)
     case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
       return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
-      return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE ||
-              target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
+      return (
+        target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE ||
+        target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
     case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
       return (target_state_id == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     default:
@@ -5464,11 +5519,11 @@ bool ControllerManagerStateMachine::is_transition_valid(uint8_t target_state_id)
 
 void ControllerManagerStateMachine::transition_to(uint8_t target_state_id)
 {
-
   // RAII struct to manage is_transiitoning_ flag.
-  // we have early returns and possibility of exceptions, so this is a 
+  // we have early returns and possibility of exceptions, so this is a
   // clean way to reset the flag when we leave this function IN ANY WAY
-  struct TransitionGuard {
+  struct TransitionGuard
+  {
     bool & flag;
     TransitionGuard(bool & f) : flag(f) { flag = true; }
     ~TransitionGuard() { flag = false; }
@@ -5584,7 +5639,7 @@ void ControllerManager::lifecycle_transition_to(uint8_t target_state_id)
       // we can always finalize.
       break;
   }
-  
+
   const uint8_t initial_state_id = state_machine_->get_state_id();
   state_machine_->transition_to(target_state_id);
   const uint8_t new_state_id = state_machine_->get_state_id();
@@ -5593,12 +5648,12 @@ void ControllerManager::lifecycle_transition_to(uint8_t target_state_id)
   {
     lifecycle_msgs::msg::TransitionEvent msg;
     msg.timestamp = this->now().nanoseconds();
-    
+
     msg.transition = lifecycle_get_transition_message(initial_state_id, new_state_id);
 
     msg.start_state.id = initial_state_id;
     msg.start_state.label = lifecycle_state_to_string(initial_state_id);
-    
+
     msg.goal_state.id = new_state_id;
     msg.goal_state.label = lifecycle_state_to_string(new_state_id);
 
@@ -5645,13 +5700,13 @@ LifecycleCallbackReturn ControllerManagerStateMachine::on_activate(
 LifecycleCallbackReturn ControllerManagerStateMachine::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-
   std::vector<ControllerSpec> controllers_list = cm_->get_loaded_controllers();
   std::vector<std::string> controllers_to_deactivate;
 
   for (auto & controller : controllers_list)
   {
-    if (is_controller_active(controller.c) && controller_requests_command_interface(*(controller.c)))
+    if (
+      is_controller_active(controller.c) && controller_requests_command_interface(*(controller.c)))
     {
       controllers_to_deactivate.push_back(controller.info.name);
     }
@@ -5661,10 +5716,11 @@ LifecycleCallbackReturn ControllerManagerStateMachine::on_deactivate(
   {
     RCLCPP_INFO(cm_->get_logger(), "Deactivating commander controllers...");
     // Use the non-rt switch_controller method
-    if (cm_->switch_controller(
-          {}, controllers_to_deactivate,
-          controller_manager_msgs::srv::SwitchController::Request::BEST_EFFORT, true,
-          rclcpp::Duration::from_seconds(3.0)) != controller_interface::return_type::OK)
+    if (
+      cm_->switch_controller(
+        {}, controllers_to_deactivate,
+        controller_manager_msgs::srv::SwitchController::Request::BEST_EFFORT, true,
+        rclcpp::Duration::from_seconds(3.0)) != controller_interface::return_type::OK)
     {
       RCLCPP_ERROR(cm_->get_logger(), "Failed to deactivate controllers.");
       return LifecycleCallbackReturn::FAILURE;
@@ -5685,7 +5741,8 @@ void ControllerManager::teardown()
     RCLCPP_ERROR(get_logger(), "Failed shutting down the controllers.");
   }
 
-  if (resource_manager_ && !resource_manager_->shutdown_components()) {
+  if (resource_manager_ && !resource_manager_->shutdown_components())
+  {
     RCLCPP_ERROR(get_logger(), "Failed shutting down hardware components.");
   }
 
@@ -5707,7 +5764,7 @@ void ControllerManager::teardown()
     this, hardware_interface::DEFAULT_INTROSPECTION_TOPIC,
     hardware_interface::DEFAULT_REGISTRY_KEY);
   START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::DEFAULT_REGISTRY_KEY);
-  
+
   INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
     this, hardware_interface::CM_STATISTICS_TOPIC, hardware_interface::CM_STATISTICS_KEY);
   START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::CM_STATISTICS_KEY);
@@ -5717,18 +5774,20 @@ void ControllerManager::teardown()
   RCLCPP_INFO(get_logger(), "Controller Manager teardown complete.");
 }
 
-LifecycleCallbackReturn ControllerManagerStateMachine::on_cleanup(const rclcpp_lifecycle::State &
-previous_state)
+LifecycleCallbackReturn ControllerManagerStateMachine::on_cleanup(
+  const rclcpp_lifecycle::State & previous_state)
 {
   current_state_id_ = lifecycle_msgs::msg::State::TRANSITION_STATE_CLEANINGUP;
 
-  if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED){
+  if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED)
+  {
     // if unconfigured, nothing to clean up
     return LifecycleCallbackReturn::SUCCESS;
   }
 
-  RCLCPP_INFO(cm_->get_logger(), "Starting 'cleanup' transition from state '%s'.",
-  previous_state.label().c_str());
+  RCLCPP_INFO(
+    cm_->get_logger(), "Starting 'cleanup' transition from state '%s'.",
+    previous_state.label().c_str());
 
   cm_->teardown();
   cm_->init_robot_description_callback();

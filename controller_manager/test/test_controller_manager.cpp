@@ -3652,3 +3652,34 @@ TEST_F(TestControllerManagerNotHandlingExceptions, controller_configure_on_excep
     lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE,
     test_controller->get_lifecycle_state().id());
 }
+
+class TestControllerManagerRealtimeLoopStopped
+: public ControllerManagerFixture<controller_manager::ControllerManager>
+{
+};
+
+TEST_F(TestControllerManagerRealtimeLoopStopped, unload_controller_without_realtime_loop)
+{
+  auto test_controller = std::make_shared<test_controller::TestController>();
+  cm_->add_controller(
+    test_controller, test_controller::TEST_CONTROLLER_NAME,
+    test_controller::TEST_CONTROLLER_CLASS_NAME);
+  ASSERT_EQ(1u, cm_->get_loaded_controllers().size());
+
+  // The realtime loop runs one cycle and then stops.
+  cm_->update(time_, rclcpp::Duration::from_seconds(0.01));
+  cm_->realtime_loop_stopped();
+
+  // Without the call above, the unload waits for the next update() forever.
+  auto unload_future = std::async(
+    std::launch::async, &controller_manager::ControllerManager::unload_controller, cm_,
+    test_controller::TEST_CONTROLLER_NAME);
+  ASSERT_EQ(std::future_status::ready, unload_future.wait_for(std::chrono::seconds(5)));
+  EXPECT_EQ(controller_interface::return_type::OK, unload_future.get());
+  EXPECT_EQ(0u, cm_->get_loaded_controllers().size());
+
+  // The realtime loop starts again and uses the controller list.
+  EXPECT_EQ(
+    controller_interface::return_type::OK,
+    cm_->update(time_, rclcpp::Duration::from_seconds(0.01)));
+}
