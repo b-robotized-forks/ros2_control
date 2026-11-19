@@ -115,8 +115,7 @@ public:
           current_state_id_, hardware_interface::lifecycle_state_names::UNKNOWN};
         break;
       case lifecycle_msgs::msg::State::TRANSITION_STATE_CLEANINGUP:
-        return rclcpp_lifecycle::State{
-          current_state_id_, "cleaningup"};
+        return rclcpp_lifecycle::State{current_state_id_, "cleaningup"};
     }
     // should not be reached
     return rclcpp_lifecycle::State{};
@@ -170,6 +169,13 @@ public:
   void lifecycle_allow_active(bool allow);
   /// \brief triggers transition to FINALIZED, cleaning up resources and shutting down.
   void shutdown();
+  /// Tell the controller manager that the realtime loop is stopped.
+  /**
+   * Non-realtime operations, e.g., unloading of controllers, then do not wait for the realtime
+   * loop. The next call of update() uses the controller list again.
+   * \warning Call this method only when no thread runs read(), update() or write().
+   */
+  void realtime_loop_stopped();
   // -----
 
   /// Shutdown all controllers in the controller manager.
@@ -363,7 +369,8 @@ protected:
   void warm_up_introspection();
   void reset_services();
 
-  rclcpp::Publisher<lifecycle_msgs::msg::TransitionEvent>::SharedPtr controller_manager_transition_event_publisher_;
+  rclcpp::Publisher<lifecycle_msgs::msg::TransitionEvent>::SharedPtr
+    controller_manager_transition_event_publisher_;
   std::unique_ptr<ControllerManagerStateMachine> state_machine_;
   bool allow_inactive_ = false;
   bool allow_active_ = false;
@@ -761,6 +768,12 @@ private:
      * \param[in] callback Callback to be called when the list is switched
      */
     void set_on_switch_callback(std::function<void()> callback);
+
+    /// Mark that the RT thread does not use a list.
+    /**
+     * \warning Call this method only when the RT thread does not run.
+     */
+    void release_used_by_rt_list();
 
     // Mutex protecting the controllers list
     // must be acquired before using any list other than the "used by rt"
