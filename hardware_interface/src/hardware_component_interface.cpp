@@ -283,8 +283,7 @@ CallbackReturn HardwareComponentInterface::init(
       catch (const std::exception & e)
       {
         RCLCPP_ERROR(
-          get_logger(), "Exception during publisher/timer setup for hardware status: %s",
-          e.what());
+          get_logger(), "Exception during publisher/timer setup for hardware status: %s", e.what());
         return CallbackReturn::ERROR;
       }
     }
