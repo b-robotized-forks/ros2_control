@@ -442,6 +442,12 @@ private:
    */
   void stop_async_handler_thread();
 
+  /**
+   * @brief Return true if the async thread can call update(): the controller is active and not
+   * being deactivated.
+   */
+  bool is_async_update_allowed() const;
+
   struct ControllerInterfaceBaseImpl;
   std::unique_ptr<ControllerInterfaceBaseImpl> impl_;
 
